@@ -229,8 +229,9 @@ def get_book_cover(book_id: str):
 
 
 @app.get("/api/books/{book_id}/chapters/{chapter_idx}", response_model=ChapterDetail)
-def get_chapter(book_id: str, chapter_idx: int):
-    chapter = database.get_chapter(book_id, chapter_idx)
+def get_chapter(book_id: str, chapter_idx: int, voice: Optional[str] = None):
+    validated_voice = _validate_voice_name(voice) if voice else None
+    chapter = database.get_chapter(book_id, chapter_idx, voice=validated_voice)
     if not chapter:
         raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
     return chapter
@@ -241,88 +242,186 @@ async def synthesize_chapter(
     book_id: str,
     chapter_idx: int,
     voice: Optional[str] = None,
+    part: Optional[int] = None,
+    total_parts: int = tts_service.DEFAULT_PAGE_PARTS,
 ):
     global _active_jobs
     book = database.get_book(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
 
-    chapter = database.get_chapter(book_id, chapter_idx)
+    target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
+
+    chapter = database.get_chapter(book_id, chapter_idx, voice=target_voice)
     if not chapter:
         raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
 
-    target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
+    if total_parts < 1 or total_parts > 20:
+        total_parts = tts_service.DEFAULT_PAGE_PARTS
+
+    # Si no se especifica `part`, se sintetiza hasta el último fragmento (página completa)
+    target_part = (total_parts - 1) if part is None else max(0, min(total_parts - 1, part))
+
+    base_texts = pdf_service.split_sentences(chapter.text_content)
+    if not base_texts:
+        base_texts = [s.text for s in chapter.sentences if s.text]
 
     # Siempre sintetizamos a velocidad base 1.0x; el cambio de velocidad se aplica
-    # mediante playbackRate en el reproductor HTML5 para evitar duplicar el factor
-    # y permitir cambiar la velocidad al instante sin re-sintetizar.
-    audio_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.mp3"
-    alignment_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.json"
+    # mediante playbackRate en el reproductor HTML5.
+    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_1.00"
+    audio_path = config.AUDIO_DIR / f"{base_prefix}.mp3"
+    alignment_path = config.AUDIO_DIR / f"{base_prefix}.json"
+    partial_audio_path = config.AUDIO_DIR / f"{base_prefix}.partial.mp3"
 
-    audio_path = config.AUDIO_DIR / audio_filename
-    alignment_path = config.AUDIO_DIR / alignment_filename
+    groups = tts_service.partition_sentence_indices(len(base_texts), total_parts)
 
+    # Si ya existe el archivo final completo para esta voz y coincide el número de oraciones,
+    # podemos devolver el estado progresivo (o completo) desde caché sin volver a llamar a edge-tts.
     if audio_path.exists() and alignment_path.exists():
-        with open(alignment_path, "r", encoding="utf-8") as f:
-            sentences_data = json.load(f)
-        total_duration = sentences_data[-1]["end"] if sentences_data else 0.0
+        try:
+            cached_sentences = json.loads(alignment_path.read_text(encoding="utf-8"))
+            if len(cached_sentences) == len(base_texts) and all(
+                isinstance(s.get("start"), (int, float)) for s in cached_sentences
+            ):
+                total_duration = float(cached_sentences[-1]["end"]) if cached_sentences else 0.0
+                database.update_chapter_audio(
+                    book_id=book_id,
+                    chapter_idx=chapter_idx,
+                    audio_path=str(audio_path),
+                    alignment_path=str(alignment_path),
+                    duration_seconds=total_duration,
+                    sentences=cached_sentences,
+                )
+                return {
+                    "status": "cached",
+                    "part": total_parts,
+                    "total_parts": total_parts,
+                    "is_complete": True,
+                    "audio_url": f"/api/books/{book_id}/chapters/{chapter_idx}/audio?voice={target_voice}",
+                    "duration": total_duration,
+                    "sentences": cached_sentences,
+                }
+        except Exception:
+            pass
+
+    _active_jobs += 1
+    try:
+        for p in range(target_part + 1):
+            part_audio_file = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.mp3"
+            part_meta_file = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.json"
+            if not (part_audio_file.exists() and part_meta_file.exists()):
+                p_indices = groups[p]
+                p_texts = [base_texts[i] for i in p_indices]
+                p_bytes, p_dur, p_timings = await tts_service.synthesize_sentence_group(
+                    p_texts, voice=target_voice, speed=1.0
+                )
+                part_audio_file.parent.mkdir(parents=True, exist_ok=True)
+                part_audio_file.write_bytes(p_bytes)
+                part_meta_file.write_text(
+                    json.dumps({"duration": p_dur, "timings": p_timings}),
+                    encoding="utf-8",
+                )
+    finally:
+        _active_jobs -= 1
+
+    # Ensamblar los fragmentos 0..target_part ya cargados
+    combined_audio = bytearray()
+    time_offset = 0.0
+    progressive_sentences = [
+        {"index": i, "text": txt, "start": None, "end": None}
+        for i, txt in enumerate(base_texts)
+    ]
+
+    for p in range(target_part + 1):
+        part_audio_file = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.mp3"
+        part_meta_file = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.json"
+        p_bytes = part_audio_file.read_bytes()
+        meta = json.loads(part_meta_file.read_text(encoding="utf-8"))
+        p_indices = groups[p]
+        p_timings = meta.get("timings", [])
+
+        for idx_in_group, sent_idx in enumerate(p_indices):
+            if idx_in_group < len(p_timings):
+                rel_start, rel_end = p_timings[idx_in_group]
+                progressive_sentences[sent_idx]["start"] = round(time_offset + rel_start, 3)
+                progressive_sentences[sent_idx]["end"] = round(time_offset + rel_end, 3)
+
+        combined_audio.extend(p_bytes)
+        time_offset += len(p_bytes) / tts_service.BYTES_PER_SECOND
+
+    total_duration = round(time_offset, 3)
+    is_complete = target_part >= total_parts - 1
+
+    if is_complete:
+        audio_path.write_bytes(bytes(combined_audio))
+        alignment_path.write_text(
+            json.dumps(progressive_sentences, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         database.update_chapter_audio(
             book_id=book_id,
             chapter_idx=chapter_idx,
             audio_path=str(audio_path),
             alignment_path=str(alignment_path),
             duration_seconds=total_duration,
-            sentences=sentences_data,
+            sentences=progressive_sentences,
         )
-        return {
-            "status": "cached",
-            "audio_url": f"/api/books/{book_id}/chapters/{chapter_idx}/audio",
-            "duration": total_duration,
-            "sentences": sentences_data,
-        }
-
-    _active_jobs += 1
-    try:
-        duration, sentences_alignment = await tts_service.synthesize_text_to_audio(
-            text=chapter.text_content,
-            voice=target_voice,
-            speed=1.0,
-            output_audio_path=audio_path,
-            output_alignment_path=alignment_path,
-        )
-    finally:
-        _active_jobs -= 1
-
-    database.update_chapter_audio(
-        book_id=book_id,
-        chapter_idx=chapter_idx,
-        audio_path=str(audio_path),
-        alignment_path=str(alignment_path),
-        duration_seconds=duration,
-        sentences=sentences_alignment,
-    )
+        # Limpiar archivos parciales temporales
+        if partial_audio_path.exists():
+            try:
+                partial_audio_path.unlink()
+            except OSError:
+                pass
+        for p in range(total_parts):
+            for ext in ("mp3", "json"):
+                tmp_f = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.{ext}"
+                if tmp_f.exists():
+                    try:
+                        tmp_f.unlink()
+                    except OSError:
+                        pass
+    else:
+        partial_audio_path.write_bytes(bytes(combined_audio))
 
     return {
-        "status": "synthesized",
-        "audio_url": f"/api/books/{book_id}/chapters/{chapter_idx}/audio",
-        "duration": duration,
-        "sentences": sentences_alignment,
+        "status": "synthesized" if is_complete else "partial",
+        "part": target_part + 1,
+        "total_parts": total_parts,
+        "is_complete": is_complete,
+        "audio_url": f"/api/books/{book_id}/chapters/{chapter_idx}/audio?voice={target_voice}",
+        "duration": total_duration,
+        "sentences": progressive_sentences,
     }
 
 
 @app.get("/api/books/{book_id}/chapters/{chapter_idx}/audio")
-def get_chapter_audio(book_id: str, chapter_idx: int):
-    with database.get_connection() as conn:
-        row = conn.execute(
-            "SELECT audio_path FROM chapters WHERE book_id = ? AND idx = ?",
-            (book_id, chapter_idx),
-        ).fetchone()
-        if not row or not row["audio_path"] or not Path(row["audio_path"]).exists():
-            raise HTTPException(
-                status_code=404,
-                detail="El audio de este capítulo aún no ha sido sintetizado.",
-            )
-        return FileResponse(row["audio_path"], media_type="audio/mpeg")
+def get_chapter_audio(book_id: str, chapter_idx: int, voice: Optional[str] = None):
+    book = database.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+
+    target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
+    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_1.00"
+    full_path = config.AUDIO_DIR / f"{base_prefix}.mp3"
+    partial_path = config.AUDIO_DIR / f"{base_prefix}.partial.mp3"
+
+    if full_path.exists():
+        return FileResponse(
+            full_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+    if partial_path.exists():
+        return FileResponse(
+            partial_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    raise HTTPException(
+        status_code=404,
+        detail="El audio de este capítulo aún no ha sido sintetizado para la voz seleccionada.",
+    )
 
 
 @app.put("/api/books/{book_id}/progress")

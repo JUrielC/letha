@@ -11,42 +11,83 @@ from typing import Any, Dict, List, Tuple
 import pymupdf
 
 
-def split_sentences(text: str) -> List[str]:
-    """
-    Divide un texto en oraciones lógicas, respetando abreviaturas comunes y signos de puntuación.
-    """
-    if not text:
-        return []
+ABBREVS = [
+    "Sr", "Sra", "Srta", "Dr", "Dra", "Prof", "Cap", "Art", "Vol", "Núm", "Pág",
+    "pág", "etc", "vs", "Mr", "Mrs", "Ms", "St", "Jr", "Inc", "Ltd", "Co",
+    "e.g", "i.e", "U.S", "U.K",
+]
 
-    # Proteger abreviaturas comunes en español e inglés
-    abbrevs = [
-        "Sr", "Sra", "Srta", "Dr", "Dra", "Prof", "Cap", "Art", "Vol", "Núm", "Pág",
-        "pág", "etc", "vs", "Mr", "Mrs", "Ms", "e.g", "i.e",
-    ]
+
+def _protect_abbrevs(text: str) -> str:
     protected = text
-    for i, abb in enumerate(abbrevs):
+    for i, abb in enumerate(ABBREVS):
         pattern = rf"\b{re.escape(abb)}\."
         protected = re.sub(pattern, f"__ABB_{i}__", protected, flags=re.IGNORECASE)
+    return protected
 
-    # Dividir por punto, exclamación, interrogación o saltos de párrafo dobles
-    # preservando el delimitador
-    raw_sentences = re.split(r"(?<=[.!?…])\s+|\n{2,}", protected)
+
+def _restore_abbrevs(text: str) -> str:
+    restored = text
+    for i, abb in enumerate(ABBREVS):
+        restored = restored.replace(f"__ABB_{i}__", f"{abb}.")
+    return restored
+
+
+def is_complete_sentence(sentence: str) -> bool:
+    """
+    Determina si un fragmento termina como una oración completa (. ! ? …),
+    incluyendo cuando cierra con comillas o paréntesis (ej. '."', '?"', '!”'),
+    descartando abreviaturas como 'Mr.' o 'Dr.'.
+    """
+    s = sentence.strip()
+    if not s:
+        return False
+    protected = _protect_abbrevs(s).strip()
+    return bool(re.search(r'[.!?…]["”’\'»)\]]*$', protected))
+
+
+def split_sentences(text: str) -> List[str]:
+    """
+    Divide un texto en oraciones lógicas, respetando abreviaturas comunes,
+    signos de puntuación y comillas de cierre.
+    """
+    if not text or not text.strip():
+        return []
+
+    protected = _protect_abbrevs(text)
+
+    # Dividir tras signo terminal (. ! ? …) seguido opcionalmente de comillas/paréntesis de cierre
+    protected = re.sub(
+        r'([.!?…]["”’\'»)\]]*)\s+',
+        r"\1\n\n",
+        protected,
+    )
+    raw_sentences = re.split(r"\n{2,}", protected)
 
     sentences = []
     for s in raw_sentences:
         s = s.strip()
         if not s:
             continue
-        # Restaurar abreviaturas
-        for i, abb in enumerate(abbrevs):
-            s = s.replace(f"__ABB_{i}__", f"{abb}.")
-
-        # Reemplazar saltos de línea internos por espacios
+        s = _restore_abbrevs(s)
         s = re.sub(r"\s+", " ", s).strip()
-        if len(s) > 1:
+        if s:
             sentences.append(s)
 
     return sentences
+
+
+def _join_carryover(carryover: str, next_text: str) -> str:
+    """Une una oración incompleta de la página anterior con el inicio de la página siguiente."""
+    c = carryover.strip()
+    n = next_text.strip()
+    if not c:
+        return n
+    if not n:
+        return c
+    if c.endswith(("-", "‐", "­")):
+        return f"{c[:-1]}{n}"
+    return f"{c} {n}"
 
 
 def clean_page_text(page: pymupdf.Page) -> str:
@@ -93,11 +134,69 @@ def clean_page_text(page: pymupdf.Page) -> str:
     return full_page_text.strip()
 
 
+def reassemble_chapters_data(raw_chapters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Rearma el texto entre páginas consecutivas: si una página termina con una
+    oración incompleta (ej. 'It was'), termina la página en la última oración
+    completa y pasa el fragmento incompleto al inicio de la página siguiente.
+    """
+    if not raw_chapters:
+        return []
+
+    assembled: List[Dict[str, Any]] = []
+    carryover = ""
+    total = len(raw_chapters)
+
+    for i, chap in enumerate(raw_chapters):
+        combined_text = _join_carryover(carryover, chap["text_content"])
+        carryover = ""
+
+        sentences = split_sentences(combined_text)
+        if not sentences:
+            continue
+
+        is_last_page = i == total - 1
+        can_carry = len(sentences) > 1 or len(sentences[0]) > 120
+        if not is_last_page and can_carry and not is_complete_sentence(sentences[-1]):
+            carryover = sentences.pop()
+
+        if not sentences:
+            continue
+
+        final_text = " ".join(sentences)
+        assembled.append(
+            {
+                "idx": len(assembled),
+                "title": chap["title"],
+                "start_page": chap["start_page"],
+                "end_page": chap["end_page"],
+                "text_content": final_text,
+                "sentences": [
+                    {"index": s_idx, "text": s_txt, "start": None, "end": None}
+                    for s_idx, s_txt in enumerate(sentences)
+                ],
+            }
+        )
+
+    if carryover and assembled:
+        last = assembled[-1]
+        merged_text = _join_carryover(last["text_content"], carryover)
+        merged_sentences = split_sentences(merged_text)
+        last["text_content"] = " ".join(merged_sentences)
+        last["sentences"] = [
+            {"index": s_idx, "text": s_txt, "start": None, "end": None}
+            for s_idx, s_txt in enumerate(merged_sentences)
+        ]
+
+    return assembled
+
+
 def extract_pdf_data(
     pdf_path: Path, covers_dir: Path
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
-    Abre el PDF, genera la portada si es posible, y extrae los capítulos segmentados.
+    Abre el PDF, genera la portada si es posible, y extrae los capítulos segmentados
+    rearmando oraciones que queden cortadas entre páginas.
     """
     doc = pymupdf.open(str(pdf_path))
     total_pages = len(doc)
@@ -126,11 +225,9 @@ def extract_pdf_data(
             if t and p_idx not in page_toc_titles:
                 page_toc_titles[p_idx] = t
 
-    chapters_data: List[Dict[str, Any]] = []
+    raw_chapters: List[Dict[str, Any]] = []
     current_section_title = ""
-    chunk_idx = 0
 
-    # Dividir página por página para que la síntesis de voz sea casi instantánea (1-2s por página)
     for p_num in range(total_pages):
         if p_num in page_toc_titles:
             current_section_title = page_toc_titles[p_num]
@@ -139,31 +236,23 @@ def extract_pdf_data(
         if not p_text:
             continue
 
-        sentences = split_sentences(p_text)
-        if not sentences:
-            continue
-
         if current_section_title:
             chap_title = f"Pág. {p_num + 1} — {current_section_title}"
         else:
             chap_title = f"Página {p_num + 1}"
 
-        chapters_data.append(
+        raw_chapters.append(
             {
-                "idx": chunk_idx,
                 "title": chap_title,
                 "start_page": p_num + 1,
                 "end_page": p_num + 1,
                 "text_content": p_text,
-                "sentences": [
-                    {"index": s_idx, "text": s_txt, "start": None, "end": None}
-                    for s_idx, s_txt in enumerate(sentences)
-                ],
             }
         )
-        chunk_idx += 1
 
     doc.close()
+
+    chapters_data = reassemble_chapters_data(raw_chapters)
 
     book_info = {
         "title": title,

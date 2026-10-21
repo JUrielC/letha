@@ -32,6 +32,8 @@ import {
 type Theme = "light" | "sepia" | "dark";
 type FontSize = "sm" | "base" | "lg" | "xl";
 
+const TOTAL_PARTS = 5;
+
 function ReaderContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("id") || "";
@@ -42,12 +44,13 @@ function ReaderContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
-  // Estados de reproducción
+  // Estados de reproducción y carga progresiva por fragmentos (1..5)
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [loadedParts, setLoadedParts] = useState<number>(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeSentenceIdx, setActiveSentenceIdx] = useState<number>(-1);
   const [currentTime, setCurrentTime] = useState(0);
@@ -62,8 +65,13 @@ function ReaderContent() {
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
   const pendingRestoreRef = useRef<{ chapterIdx: number; sentenceIdx: number } | null>(null);
   const pendingSeekTimeRef = useRef<number | null>(null);
+  const resumePlayAfterSwapRef = useRef<boolean>(false);
+  const isPlayingRef = useRef<boolean>(false);
   const isInitialLoadRef = useRef<boolean>(true);
-  const autoPlayNextRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // Cargar preferencias guardadas y tema
   useEffect(() => {
@@ -91,7 +99,7 @@ function ReaderContent() {
     applyTheme(next);
   };
 
-  // Cargar libro inicial
+  // Cargar libro inicial (incluyendo la voz previamente guardada antes de cargar el capítulo)
   useEffect(() => {
     if (!bookId) return;
     let ignore = false;
@@ -114,9 +122,9 @@ function ReaderContent() {
           chapterIdx: targetChapter,
           sentenceIdx: b.current_sentence_idx || 0,
         };
-        setCurrentChapterIdx(targetChapter);
-        if (b.voice) setSelectedVoice(b.voice);
         if (b.speed) setPlaybackSpeed(b.speed);
+        setSelectedVoice(b.voice || "es-MX-DaliaNeural");
+        setCurrentChapterIdx(targetChapter);
       })
       .catch((err: any) => {
         if (ignore) return;
@@ -128,24 +136,22 @@ function ReaderContent() {
     };
   }, [bookId]);
 
-  // Precarga en segundo plano de la siguiente página para transición instantánea
-  const prefetchNextChapter = (nextIdx: number) => {
-    if (!bookId || !book || nextIdx >= book.total_chapters) return;
-    api.synthesizeChapter(bookId, nextIdx, selectedVoice).catch(() => {});
-  };
-
-  // Cargar capítulo cuando cambie currentChapterIdx (solo después de cargar el libro)
+  // Cargar capítulo y sintetizar en 5 partes cuando cambie currentChapterIdx o selectedVoice
   useEffect(() => {
-    if (!bookId || currentChapterIdx === null) return;
+    if (!bookId || currentChapterIdx === null || !selectedVoice) return;
     let ignore = false;
+    const controller = new AbortController();
     const chapterIdx = currentChapterIdx;
+    const voice = selectedVoice;
 
-    const shouldAutoPlay = autoPlayNextRef.current;
-    autoPlayNextRef.current = false;
-
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
     setIsPlaying(false);
+    isPlayingRef.current = false;
     setCurrentTime(0);
     pendingSeekTimeRef.current = null;
+    resumePlayAfterSwapRef.current = false;
     setLoadError(null);
 
     let restoredSentence = -1;
@@ -162,9 +168,9 @@ function ReaderContent() {
       api.updateProgress(bookId, chapterIdx, 0).catch(console.error);
     }
 
-    api
-      .getChapter(bookId, chapterIdx)
-      .then((c) => {
+    const loadAndSynthesizeInParts = async () => {
+      try {
+        const c = await api.getChapter(bookId, chapterIdx, voice);
         if (ignore) return;
         setChapter(c);
 
@@ -183,67 +189,140 @@ function ReaderContent() {
           }, 120);
         }
 
-        if (c.has_audio) {
-          const base = getBaseUrl();
-          setAudioUrl(
-            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?t=${Date.now()}`
-          );
-          if (shouldAutoPlay) {
-            setTimeout(() => {
-              if (ignore) return;
-              if (audioRef.current) {
-                audioRef.current.play().catch(console.error);
-                setIsPlaying(true);
-              }
-            }, 150);
-            prefetchNextChapter(chapterIdx + 1);
+        const base = getBaseUrl();
+
+        const preloadNextPageFirstPart = () => {
+          if (ignore) return;
+          const nextIdx = chapterIdx + 1;
+          if (!book || nextIdx < book.total_chapters) {
+            api
+              .synthesizeChapter(
+                bookId,
+                nextIdx,
+                voice,
+                0,
+                TOTAL_PARTS,
+                controller.signal
+              )
+              .catch(() => {});
           }
+        };
+
+        // Si la página ya está completamente sintetizada en caché para esta voz
+        if (c.has_audio) {
+          setLoadedParts(TOTAL_PARTS);
+          setIsSynthesizing(false);
+          setAudioUrl(
+            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?voice=${encodeURIComponent(
+              voice
+            )}&t=${Date.now()}`
+          );
+          preloadNextPageFirstPart();
+          return;
+        }
+
+        // Determinar cuántos fragmentos iniciales (ej. el fragmento 1 precargado desde la página anterior)
+        // ya están listos en disco para no volver a pedirlos y empezar desde el siguiente fragmento.
+        const startPart = Math.min(TOTAL_PARTS, Math.max(0, c.loaded_parts || 0));
+        setLoadedParts(startPart);
+        setIsSynthesizing(true);
+
+        if (startPart > 0) {
+          setAudioUrl(
+            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?voice=${encodeURIComponent(
+              voice
+            )}&part=${startPart}&t=${Date.now()}`
+          );
         } else {
           setAudioUrl(null);
-          if (shouldAutoPlay) {
-            // Sintetizar automáticamente al pasar de página en reproducción continua
-            setIsSynthesizing(true);
-            api
-              .synthesizeChapter(bookId, chapterIdx, selectedVoice)
-              .then((res) => {
-                if (ignore) return;
-                setChapter((prev) =>
-                  prev && prev.idx === chapterIdx
-                    ? {
-                        ...prev,
-                        has_audio: true,
-                        duration_seconds: res.duration,
-                        sentences: res.sentences,
-                      }
-                    : prev
-                );
-                const base = getBaseUrl();
-                setAudioUrl(`${base}${res.audio_url}?t=${Date.now()}`);
-                setTimeout(() => {
-                  if (ignore) return;
-                  if (audioRef.current) {
-                    audioRef.current.play().catch(console.error);
-                    setIsPlaying(true);
+        }
+
+        for (let p = startPart; p < TOTAL_PARTS; p++) {
+          if (ignore) return;
+
+          const res = await api.synthesizeChapter(
+            bookId,
+            chapterIdx,
+            voice,
+            p,
+            TOTAL_PARTS,
+            controller.signal
+          );
+          if (ignore) return;
+
+          setLoadedParts(res.part);
+          setChapter((prev) =>
+            prev && prev.idx === chapterIdx
+              ? {
+                  ...prev,
+                  has_audio: res.is_complete,
+                   loaded_parts: res.part,
+                  duration_seconds: res.duration,
+                  sentences: res.sentences,
+                }
+              : prev
+          );
+
+          // Si había una oración restaurada y su fragmento acaba de cargarse, preparar su posición
+          if (
+            restoredSentence > 0 &&
+            restoredSentence < res.sentences.length &&
+            typeof res.sentences[restoredSentence]?.start === "number" &&
+            !isPlayingRef.current &&
+            currentTime === 0
+          ) {
+            const targetStart = res.sentences[restoredSentence].start as number;
+            pendingSeekTimeRef.current = targetStart;
+            setCurrentTime(targetStart);
+          }
+
+          const nextAudioUrl = `${base}${res.audio_url}&part=${res.part}&t=${Date.now()}`;
+
+          if (p === 0 && startPart === 0) {
+            setAudioUrl(nextAudioUrl);
+          } else if (res.is_complete || !isPlayingRef.current) {
+            // Al completar las 5 partes (o si está en pausa), actualizar el audio combinado final
+            if (isPlayingRef.current && audioRef.current) {
+              pendingSeekTimeRef.current = audioRef.current.currentTime;
+              resumePlayAfterSwapRef.current = true;
+            }
+            setAudioUrl(nextAudioUrl);
+          }
+
+          if (res.is_complete) {
+            setBook((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    chapters: prev.chapters.map((ch) =>
+                      ch.idx === chapterIdx
+                        ? { ...ch, has_audio: true, duration_seconds: res.duration }
+                        : ch
+                    ),
                   }
-                }, 150);
-                prefetchNextChapter(chapterIdx + 1);
-              })
-              .catch(console.error)
-              .finally(() => {
-                if (!ignore) setIsSynthesizing(false);
-              });
+                : prev
+            );
+            preloadNextPageFirstPart();
+            break;
           }
         }
-      })
-      .catch((err: any) => {
-        if (ignore) return;
-        setLoadError(err.message || "No se pudo cargar este capítulo.");
-      });
+      } catch (err: any) {
+        if (ignore || err?.name === "AbortError") return;
+        console.error(err);
+      } finally {
+        if (!ignore) {
+          setIsSynthesizing(false);
+        }
+      }
+    };
+
+    loadAndSynthesizeInParts();
 
     return () => {
       ignore = true;
+      controller.abort();
     };
-  }, [bookId, currentChapterIdx]);
+  }, [bookId, currentChapterIdx, selectedVoice]);
 
   // Sincronización Karaoke: Detectar oración activa según currentTime
   useEffect(() => {
@@ -283,60 +362,11 @@ function ReaderContent() {
     }
   }, [currentTime, chapter, activeSentenceIdx, isPlaying, bookId, currentChapterIdx]);
 
-  // Generar o re-generar audio para el capítulo
-  const handleSynthesize = async () => {
-    if (!chapter || !bookId || currentChapterIdx === null) return;
-    const targetChapterIdx = currentChapterIdx;
-    setIsSynthesizing(true);
-    try {
-      const res = await api.synthesizeChapter(
-        bookId,
-        targetChapterIdx,
-        selectedVoice
-      );
-
-      // Actualizar datos del capítulo con los timestamps generados
-      setChapter((prev) =>
-        prev && prev.idx === targetChapterIdx
-          ? {
-              ...prev,
-              has_audio: true,
-              duration_seconds: res.duration,
-              sentences: res.sentences,
-            }
-          : prev
-      );
-
-      const base = getBaseUrl();
-      const newUrl = `${base}${res.audio_url}?t=${Date.now()}`;
-      setAudioUrl(newUrl);
-
-      // Comenzar reproducción automáticamente y precargar la siguiente página
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.play().catch(console.error);
-          setIsPlaying(true);
-        }
-      }, 200);
-      prefetchNextChapter(targetChapterIdx + 1);
-    } catch (err: any) {
-      alert(`Error al generar audio: ${err.message}`);
-    } finally {
-      setIsSynthesizing(false);
-    }
-  };
-
-  // Clic en una oración: saltar audio a esa posición
+  // Clic en una oración: saltar audio a esa posición si su fragmento ya está cargado
   const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
     setActiveSentenceIdx(sIdx);
     if (bookId && currentChapterIdx !== null) {
       api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
-    }
-
-    if (!audioUrl) {
-      // Si aún no hay audio, sugerir generarlo
-      handleSynthesize();
-      return;
     }
 
     if (typeof sentence.start === "number" && audioRef.current) {
@@ -372,30 +402,25 @@ function ReaderContent() {
   };
 
   const handleVoiceChange = async (newVoice: string) => {
-    setSelectedVoice(newVoice);
+    if (newVoice === selectedVoice) return;
     if (audioRef.current) {
       audioRef.current.pause();
     }
     setIsPlaying(false);
     setAudioUrl(null);
+    // Mostrar las oraciones actuales en tono opaco mientras se carga la nueva voz
+    setChapter((prev) =>
+      prev
+        ? {
+            ...prev,
+            has_audio: false,
+            sentences: prev.sentences.map((s) => ({ ...s, start: null, end: null })),
+          }
+        : null
+    );
+    setSelectedVoice(newVoice);
     if (bookId) {
       await api.updateSettings(bookId, newVoice, playbackSpeed).catch(console.error);
-      const updatedBook = await api.getBook(bookId).catch(() => null);
-      if (updatedBook) setBook(updatedBook);
-      if (currentChapterIdx !== null) {
-        const updatedChap = await api
-          .getChapter(bookId, currentChapterIdx)
-          .catch(() => null);
-        if (updatedChap) {
-          setChapter(updatedChap);
-          if (updatedChap.has_audio) {
-            const base = getBaseUrl();
-            setAudioUrl(
-              `${base}/api/books/${bookId}/chapters/${currentChapterIdx}/audio?t=${Date.now()}`
-            );
-          }
-        }
-      }
     }
   };
 
@@ -404,7 +429,7 @@ function ReaderContent() {
     if (audioRef.current) {
       audioRef.current.playbackRate = newSpeed;
     }
-    if (bookId) {
+    if (bookId && selectedVoice) {
       await api.updateSettings(bookId, selectedVoice, newSpeed).catch(console.error);
     }
   };
@@ -450,14 +475,15 @@ function ReaderContent() {
                 setCurrentTime(pendingSeekTimeRef.current);
                 pendingSeekTimeRef.current = null;
               }
+              if (resumePlayAfterSwapRef.current) {
+                resumePlayAfterSwapRef.current = false;
+                audioRef.current.play().catch(console.error);
+                setIsPlaying(true);
+              }
             }
           }}
           onEnded={() => {
             setIsPlaying(false);
-            if (book && currentChapterIdx !== null && currentChapterIdx + 1 < book.total_chapters) {
-              autoPlayNextRef.current = true;
-              setCurrentChapterIdx(currentChapterIdx + 1);
-            }
           }}
         />
       )}
@@ -509,9 +535,9 @@ function ReaderContent() {
             </button>
 
             <select
-              value={selectedVoice}
+              value={selectedVoice || "es-MX-DaliaNeural"}
               onChange={(e) => handleVoiceChange(e.target.value)}
-              className="hidden md:block max-w-[240px] text-xs font-medium bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+              className="max-w-[160px] sm:max-w-[240px] text-xs font-medium bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
               title="Cambiar persona que narra"
             >
               {voices.map((v) => (
@@ -526,6 +552,26 @@ function ReaderContent() {
             </select>
           </div>
         </div>
+
+        {/* Barra superior de progreso de fragmentos de voz (1 de 5 .. 5 de 5) */}
+        {isSynthesizing && (
+          <div className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-1.5">
+            <div className="max-w-3xl mx-auto flex items-center gap-3">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
+              <div className="flex-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-all duration-300 rounded-full"
+                  style={{
+                    width: `${Math.max(10, (loadedParts / TOTAL_PARTS) * 100)}%`,
+                  }}
+                />
+              </div>
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
+                {Math.max(1, loadedParts)} de {TOTAL_PARTS}
+              </span>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Drawer / Menú lateral de Capítulos */}
@@ -596,6 +642,8 @@ function ReaderContent() {
             <div className="space-y-4">
               {chapter.sentences.map((s, idx) => {
                 const isActive = idx === activeSentenceIdx;
+                const isVoiceReady =
+                  typeof s.start === "number" && typeof s.end === "number";
                 return (
                   <span
                     key={idx}
@@ -603,15 +651,17 @@ function ReaderContent() {
                       sentenceRefs.current[idx] = el;
                     }}
                     onClick={() => handleSentenceClick(s, idx)}
-                    className={`sentence-item cursor-pointer inline ${
+                    className={`sentence-item inline transition-opacity duration-300 ${
                       isActive
-                        ? getActiveSentenceClass()
-                        : "hover:bg-black/5 dark:hover:bg-white/5"
+                        ? `${getActiveSentenceClass()} opacity-100 cursor-pointer`
+                        : isVoiceReady
+                        ? "opacity-100 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
+                        : "opacity-35 cursor-wait"
                     }`}
                     title={
-                      typeof s.start === "number"
-                        ? `Saltar a ${s.start.toFixed(1)}s`
-                        : "Haz clic para escuchar"
+                      isVoiceReady
+                        ? `Escuchar desde ${(s.start as number).toFixed(1)}s`
+                        : "Cargando voz para este fragmento..."
                     }
                   >
                     {s.text}{" "}
@@ -626,37 +676,12 @@ function ReaderContent() {
       {/* Barra de Transporte Flotante de Audio */}
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95 border-zinc-200 dark:border-zinc-800 shadow-2xl px-4 py-3">
         <div className="max-w-3xl mx-auto flex flex-col gap-2">
-          {!audioUrl && !isSynthesizing ? (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2.5">
-              <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
-                <Volume2 className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>Elige quién narra y escucha esta página:</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedVoice}
-                  onChange={(e) => handleVoiceChange(e.target.value)}
-                  className="flex-1 sm:max-w-[230px] text-xs font-medium bg-white dark:bg-zinc-900 border border-amber-500/30 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
-                >
-                  {voices.map((v) => (
-                    <option key={v.short_name} value={v.short_name}>
-                      {v.friendly_name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleSynthesize}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition shrink-0"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span>Narrar</span>
-                </button>
-              </div>
-            </div>
-          ) : isSynthesizing ? (
+          {!audioUrl && isSynthesizing ? (
             <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">
               <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-              <span>Sintetizando voz y generando marcas de sincronización con Microsoft Edge...</span>
+              <span>
+                Cargando voz del fragmento {Math.max(1, loadedParts)} de {TOTAL_PARTS}...
+              </span>
             </div>
           ) : (
             <>
@@ -674,12 +699,13 @@ function ReaderContent() {
                   max={duration || 100}
                   step={0.1}
                   value={currentTime}
+                  disabled={!audioUrl}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value);
                     setCurrentTime(val);
                     if (audioRef.current) audioRef.current.currentTime = val;
                   }}
-                  className="flex-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  className="flex-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500 disabled:opacity-40"
                 />
                 <span>
                   {Math.floor(duration / 60)}:
@@ -697,23 +723,25 @@ function ReaderContent() {
                     currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx - 1)
                   }
                   className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                  title="Capítulo anterior"
+                  title="Página anterior"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
 
                 <div className="flex items-center gap-3">
                   <button
+                    disabled={!audioUrl}
                     onClick={() => seekRelative(-10)}
-                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 disabled:opacity-30 transition"
                     title="Retroceder 10 segundos"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
 
                   <button
+                    disabled={!audioUrl}
                     onClick={togglePlay}
-                    className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center shadow-md transition active:scale-95"
+                    className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white flex items-center justify-center shadow-md transition active:scale-95"
                     title={isPlaying ? "Pausar" : "Reproducir"}
                   >
                     {isPlaying ? (
@@ -724,8 +752,9 @@ function ReaderContent() {
                   </button>
 
                   <button
+                    disabled={!audioUrl}
                     onClick={() => seekRelative(10)}
-                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 disabled:opacity-30 transition"
                     title="Adelantar 10 segundos"
                   >
                     <RotateCw className="w-4 h-4" />
@@ -756,7 +785,7 @@ function ReaderContent() {
                       currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx + 1)
                     }
                     className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                    title="Siguiente capítulo"
+                    title="Siguiente página"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>

@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional
 from letha import config
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import BookDetail, BookSummary, ChapterDetail, ChapterSummary, SentenceItem
+from letha.services import pdf as pdf_service
+from letha.services import tts as tts_service
 
 
 def get_connection() -> sqlite3.Connection:
@@ -71,7 +73,51 @@ def init_db():
             WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_1.00.mp3'
             """
         )
+        _migrate_reassemble_existing_books(conn)
         conn.commit()
+
+
+def _migrate_reassemble_existing_books(conn: sqlite3.Connection) -> None:
+    """
+    Rearma las páginas de los libros ya existentes en la base de datos si alguna
+    página terminaba con una oración incompleta (ej. 'It was' al final de página).
+    Es idempotente: una vez rearmadas, no vuelve a modificar los capítulos.
+    """
+    book_rows = conn.execute("SELECT id FROM books").fetchall()
+    for b_row in book_rows:
+        book_id = b_row["id"]
+        chap_rows = conn.execute(
+            "SELECT id, idx, title, start_page, end_page, text_content FROM chapters WHERE book_id = ? ORDER BY idx ASC",
+            (book_id,),
+        ).fetchall()
+        if not chap_rows:
+            continue
+
+        raw_chaps = [dict(r) for r in chap_rows]
+        assembled = pdf_service.reassemble_chapters_data(raw_chaps)
+        if len(assembled) != len(raw_chaps):
+            continue
+
+        for old_c, new_c in zip(raw_chaps, assembled):
+            if old_c["text_content"].strip() != new_c["text_content"].strip():
+                c_idx = old_c["idx"]
+                conn.execute(
+                    """
+                    UPDATE chapters
+                    SET text_content = ?, sentences_json = ?, audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
+                    WHERE id = ?
+                    """,
+                    (
+                        new_c["text_content"],
+                        json.dumps(new_c["sentences"]),
+                        old_c["id"],
+                    ),
+                )
+                for stale_file in config.AUDIO_DIR.glob(f"{book_id}_c{c_idx}_*"):
+                    try:
+                        stale_file.unlink()
+                    except OSError:
+                        pass
 
 
 def list_books() -> List[BookSummary]:
@@ -99,28 +145,39 @@ def list_books() -> List[BookSummary]:
         return result
 
 
+def _chapter_voice_files(book_id: str, chapter_idx: int, voice: str) -> tuple[Path, Path]:
+    audio_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_1.00.mp3"
+    align_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_1.00.json"
+    return audio_file, align_file
+
+
 def get_book(book_id: str) -> Optional[BookDetail]:
     with get_connection() as conn:
         r = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if not r:
             return None
 
+        active_voice = r["voice"] or DEFAULT_VOICE
+
         chapters_rows = conn.execute(
             "SELECT idx, title, start_page, end_page, audio_path, duration_seconds FROM chapters WHERE book_id = ? ORDER BY idx ASC",
             (book_id,),
         ).fetchall()
 
-        chapters = [
-            ChapterSummary(
-                idx=c["idx"],
-                title=c["title"],
-                start_page=c["start_page"],
-                end_page=c["end_page"],
-                has_audio=bool(c["audio_path"]),
-                duration_seconds=c["duration_seconds"],
+        chapters = []
+        for c in chapters_rows:
+            audio_file, align_file = _chapter_voice_files(book_id, c["idx"], active_voice)
+            has_voice_audio = audio_file.exists() and align_file.exists()
+            chapters.append(
+                ChapterSummary(
+                    idx=c["idx"],
+                    title=c["title"],
+                    start_page=c["start_page"],
+                    end_page=c["end_page"],
+                    has_audio=has_voice_audio,
+                    duration_seconds=c["duration_seconds"] if has_voice_audio else None,
+                )
             )
-            for c in chapters_rows
-        ]
 
         cover_url = f"/api/books/{r['id']}/cover" if r["cover_path"] else None
         return BookDetail(
@@ -132,7 +189,7 @@ def get_book(book_id: str) -> Optional[BookDetail]:
             cover_url=cover_url,
             current_chapter_idx=r["current_chapter_idx"],
             current_sentence_idx=r["current_sentence_idx"],
-            voice=r["voice"],
+            voice=active_voice,
             speed=r["speed"],
             created_at=r["created_at"],
             last_read_at=r["last_read_at"],
@@ -140,8 +197,15 @@ def get_book(book_id: str) -> Optional[BookDetail]:
         )
 
 
-def get_chapter(book_id: str, chapter_idx: int) -> Optional[ChapterDetail]:
+def get_chapter(
+    book_id: str, chapter_idx: int, voice: Optional[str] = None
+) -> Optional[ChapterDetail]:
     with get_connection() as conn:
+        book_row = conn.execute("SELECT voice FROM books WHERE id = ?", (book_id,)).fetchone()
+        if not book_row:
+            return None
+        active_voice = voice or book_row["voice"] or DEFAULT_VOICE
+
         r = conn.execute(
             "SELECT * FROM chapters WHERE book_id = ? AND idx = ?",
             (book_id, chapter_idx),
@@ -149,8 +213,84 @@ def get_chapter(book_id: str, chapter_idx: int) -> Optional[ChapterDetail]:
         if not r:
             return None
 
-        sentences_data = json.loads(r["sentences_json"])
-        sentences = [SentenceItem(**s) for s in sentences_data]
+        base_texts = pdf_service.split_sentences(r["text_content"])
+        if not base_texts:
+            try:
+                raw_saved = json.loads(r["sentences_json"])
+                base_texts = [s["text"] for s in raw_saved if s.get("text")]
+            except Exception:
+                base_texts = []
+
+        audio_file, align_file = _chapter_voice_files(book_id, chapter_idx, active_voice)
+        total_parts = tts_service.DEFAULT_PAGE_PARTS
+        loaded_parts = 0
+        has_voice_audio = False
+        duration_seconds: Optional[float] = None
+        sentences: List[SentenceItem] = []
+
+        if audio_file.exists() and align_file.exists():
+            try:
+                cached_data = json.loads(align_file.read_text(encoding="utf-8"))
+                if len(cached_data) == len(base_texts) and all(
+                    isinstance(item.get("start"), (int, float)) for item in cached_data
+                ):
+                    sentences = [SentenceItem(**item) for item in cached_data]
+                    has_voice_audio = True
+                    loaded_parts = total_parts
+                    duration_seconds = (
+                        float(cached_data[-1]["end"]) if cached_data else 0.0
+                    )
+            except Exception:
+                has_voice_audio = False
+
+        if not sentences:
+            base_prefix = f"{book_id}_c{chapter_idx}_{active_voice}_1.00"
+            groups = tts_service.partition_sentence_indices(len(base_texts), total_parts)
+
+            # Comprobar cuántos fragmentos iniciales (0, 1, ...) ya fueron precargados
+            contiguous_parts = 0
+            for p in range(total_parts):
+                p_audio = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.mp3"
+                p_meta = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.json"
+                if p_audio.exists() and p_meta.exists():
+                    contiguous_parts = p + 1
+                else:
+                    break
+
+            raw_items = [
+                {"index": i, "text": txt, "start": None, "end": None}
+                for i, txt in enumerate(base_texts)
+            ]
+
+            if contiguous_parts > 0:
+                combined_audio = bytearray()
+                time_offset = 0.0
+                try:
+                    for p in range(contiguous_parts):
+                        p_audio = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.mp3"
+                        p_meta = config.AUDIO_DIR / f"{base_prefix}.p{p}of{total_parts}.json"
+                        p_bytes = p_audio.read_bytes()
+                        meta = json.loads(p_meta.read_text(encoding="utf-8"))
+                        p_indices = groups[p]
+                        p_timings = meta.get("timings", [])
+                        for idx_in_group, sent_idx in enumerate(p_indices):
+                            if idx_in_group < len(p_timings):
+                                rel_start, rel_end = p_timings[idx_in_group]
+                                raw_items[sent_idx]["start"] = round(time_offset + rel_start, 3)
+                                raw_items[sent_idx]["end"] = round(time_offset + rel_end, 3)
+                        combined_audio.extend(p_bytes)
+                        time_offset += len(p_bytes) / tts_service.BYTES_PER_SECOND
+
+                    partial_audio_path = config.AUDIO_DIR / f"{base_prefix}.partial.mp3"
+                    if not partial_audio_path.exists():
+                        partial_audio_path.write_bytes(bytes(combined_audio))
+
+                    loaded_parts = contiguous_parts
+                    duration_seconds = round(time_offset, 3)
+                except Exception:
+                    loaded_parts = 0
+
+            sentences = [SentenceItem(**item) for item in raw_items]
 
         return ChapterDetail(
             idx=r["idx"],
@@ -160,8 +300,10 @@ def get_chapter(book_id: str, chapter_idx: int) -> Optional[ChapterDetail]:
             end_page=r["end_page"],
             text_content=r["text_content"],
             sentences=sentences,
-            has_audio=bool(r["audio_path"]),
-            duration_seconds=r["duration_seconds"],
+            has_audio=has_voice_audio,
+            loaded_parts=loaded_parts,
+            total_parts=total_parts,
+            duration_seconds=duration_seconds,
         )
 
 

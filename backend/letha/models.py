@@ -33,6 +33,8 @@ class ChapterDetail(BaseModel):
     text_content: str
     sentences: List[SentenceItem] = []
     has_audio: bool = False
+    loaded_parts: int = 0
+    total_parts: int = 5
     duration_seconds: Optional[float] = None
 
 

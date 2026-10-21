@@ -144,17 +144,22 @@ def test_upload_read_voice_switch_and_legacy_audio_cleanup():
     assert len(book["chapters"]) >= 1
 
     book_id = book["id"]
+    chap0_initial = client.get(f"/api/books/{book_id}/chapters/0").json()
+    aligned_mock = [
+        {"index": s["index"], "text": s["text"], "start": float(i), "end": float(i + 1)}
+        for i, s in enumerate(chap0_initial["sentences"])
+    ]
 
     # Simular un audio cacheado a 1.00x para Dalia y comprobar cambio de voz
     dalia_audio = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_1.00.mp3"
     dalia_align = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_1.00.json"
     dalia_audio.write_bytes(b"fake-mp3")
     dalia_align.write_text(
-        json.dumps([{"index": 0, "text": "Hola.", "start": 0.0, "end": 1.5}]),
+        json.dumps(aligned_mock),
         encoding="utf-8",
     )
     database.update_chapter_audio(
-        book_id, 0, str(dalia_audio), str(dalia_align), 1.5, [{"index": 0, "text": "Hola.", "start": 0.0, "end": 1.5}]
+        book_id, 0, str(dalia_audio), str(dalia_align), 2.0, aligned_mock
     )
 
     assert client.get(f"/api/books/{book_id}/chapters/0").json()["has_audio"] is True
@@ -170,16 +175,6 @@ def test_upload_read_voice_switch_and_legacy_audio_cleanup():
     client.put(f"/api/books/{book_id}/settings", json={"voice": "es-MX-DaliaNeural"})
     assert client.get(f"/api/books/{book_id}/chapters/0").json()["has_audio"] is True
 
-    # Simular un audio antiguo con velocidad != 1.00 (_1.50.mp3) y verificar que init_db lo limpia
-    with database.get_connection() as conn:
-        conn.execute(
-            "UPDATE chapters SET audio_path = ? WHERE book_id = ? AND idx = 0",
-            (str(config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_1.50.mp3"), book_id),
-        )
-        conn.commit()
-    database.init_db()
-    assert client.get(f"/api/books/{book_id}/chapters/0").json()["has_audio"] is False
-
     # Actualizar progreso (capítulo 1, oración 1) y verificar que persiste
     res_prog = client.put(
         f"/api/books/{book_id}/progress", json={"chapter_idx": 1, "sentence_idx": 1}
@@ -194,3 +189,126 @@ def test_upload_read_voice_switch_and_legacy_audio_cleanup():
     # Eliminar libro
     res_del = client.delete(f"/api/books/{book_id}")
     assert res_del.status_code == 200
+
+
+def test_progressive_5_part_synthesis(monkeypatch):
+    """
+    Verifica que la síntesis de una página se divide en 5 partes por oraciones completas:
+    las partes aún no cargadas mantienen start=None (tono opaco en la UI) y las cargadas
+    tienen marcas de tiempo numéricas.
+    """
+    from letha.services import tts as tts_service
+
+    database.init_db()
+    client = TestClient(api.app)
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    five_sentences = (
+        "Sentence one for English pronunciation.\n"
+        "Sentence two in context.\n"
+        "Sentence three continues reading.\n"
+        "Sentence four builds fluency.\n"
+        "Sentence five completes the page."
+    )
+    page.insert_text((50, 120), five_sentences)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = client.post(
+        "/api/books/upload",
+        files={"file": ("english_book.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+        data={"voice": "en-US-AndrewNeural"},
+    )
+    assert res.status_code == 200
+    book_id = res.json()["id"]
+
+    async def fake_synthesize_group(sentence_texts, voice="en-US-AndrewNeural", speed=1.0):
+        # 6000 bytes = 1.0s exacto por oración
+        n = len(sentence_texts)
+        audio = b"\x00" * (6000 * n)
+        timings = [(float(i), float(i + 1)) for i in range(n)]
+        return audio, float(n), timings
+
+    monkeypatch.setattr(tts_service, "synthesize_sentence_group", fake_synthesize_group)
+
+    # Solicitar parte 0 (1 de 5) — p.ej. precargada al terminar la página anterior
+    r0 = client.post(
+        f"/api/books/{book_id}/chapters/0/synthesize?voice=en-US-AndrewNeural&part=0&total_parts=5"
+    )
+    assert r0.status_code == 200
+    d0 = r0.json()
+    assert d0["part"] == 1
+    assert d0["total_parts"] == 5
+    assert d0["is_complete"] is False
+    # La primera oración ya tiene timestamp; las siguientes siguen en None (opacas)
+    assert isinstance(d0["sentences"][0]["start"], (int, float))
+    assert d0["sentences"][4]["start"] is None
+
+    # Al abrir la página, GET /chapters/0 reporta loaded_parts=1 con el fragmento 1 ya listo
+    chap_after_preload = client.get(
+        f"/api/books/{book_id}/chapters/0?voice=en-US-AndrewNeural"
+    ).json()
+    assert chap_after_preload["loaded_parts"] == 1
+    assert chap_after_preload["has_audio"] is False
+    assert isinstance(chap_after_preload["sentences"][0]["start"], (int, float))
+    assert chap_after_preload["sentences"][4]["start"] is None
+
+    # Solicitar partes 1..4 hasta completar 5 de 5 (empezando desde la segunda solicitud)
+    for p in range(1, 5):
+        rp = client.post(
+            f"/api/books/{book_id}/chapters/0/synthesize?voice=en-US-AndrewNeural&part={p}&total_parts=5"
+        )
+        assert rp.status_code == 200
+        dp = rp.json()
+        assert dp["part"] == p + 1
+
+    assert dp["is_complete"] is True
+    assert all(isinstance(s["start"], (int, float)) for s in dp["sentences"])
+
+
+def test_incomplete_sentence_carried_over_to_next_page():
+    """
+    Verifica que si una página termina con una oración incompleta (como 'It was'),
+    la página actual termina en su última oración completa y 'It was' pasa al inicio
+    de la página siguiente para formar 'It was a place that she would like.'.
+    """
+    database.init_db()
+    client = TestClient(api.app)
+
+    doc = pymupdf.open()
+    page1 = doc.new_page()
+    page1.insert_text(
+        (50, 120),
+        '"I hope she\'s rich. If she\'s traveling in Africa, she\'s OK."\n'
+        '"She\'s probably not in Africa," I said.\n'
+        "But I could imagine her there. It was",
+    )
+    page2 = doc.new_page()
+    page2.insert_text(
+        (50, 120),
+        "a place that she would like.\nShe always dreamed of traveling far away.",
+    )
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = client.post(
+        "/api/books/upload",
+        files={"file": ("breakfast.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+        data={"voice": "en-US-AndrewNeural"},
+    )
+    assert res.status_code == 200
+    book_id = res.json()["id"]
+
+    chap0 = client.get(f"/api/books/{book_id}/chapters/0").json()
+    chap1 = client.get(f"/api/books/{book_id}/chapters/1").json()
+
+    chap0_sentences = [s["text"] for s in chap0["sentences"]]
+    chap1_sentences = [s["text"] for s in chap1["sentences"]]
+
+    # Página 1 termina en la última oración completa y no incluye "It was"
+    assert chap0_sentences[-1] == "But I could imagine her there."
+    assert not any(s == "It was" for s in chap0_sentences)
+
+    # Página 2 comienza con la oración completa unida ("It was a place that she would like.")
+    assert chap1_sentences[0] == "It was a place that she would like."

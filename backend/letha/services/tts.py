@@ -1,6 +1,7 @@
 """
-Síntesis de voz y extracción de marcas de tiempo con edge-tts.
-Soporta síntesis paralela por fragmentos para que capítulos largos se generen en pocos segundos.
+Síntesis de voz y extracción de marcas de tiempo con edge-tts para Letha
+(aprendizaje de idiomas y mejora de pronunciación mediante lectura sincronizada en contexto).
+Soporta carga progresiva dividiendo cada página en 5 solicitudes basadas en oraciones completas.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ import asyncio
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import edge_tts
 
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
@@ -18,6 +19,7 @@ from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 BYTES_PER_SECOND = 6000.0
 MAX_CHUNK_CHARS = 450
 MAX_CONCURRENCY = 8
+DEFAULT_PAGE_PARTS = 5
 
 
 LOCALE_LABELS = {
@@ -107,6 +109,80 @@ def format_rate(speed: float) -> str:
     if pct >= 0:
         return f"+{pct}%"
     return f"{pct}%"
+
+
+def partition_sentence_indices(total_sentences: int, total_parts: int = DEFAULT_PAGE_PARTS) -> List[List[int]]:
+    """
+    Divide los índices de las oraciones de una página en `total_parts` grupos contiguos
+    sin cortar ninguna oración a la mitad, asignando primero los fragmentos iniciales.
+    """
+    if total_parts <= 0:
+        total_parts = DEFAULT_PAGE_PARTS
+    if total_sentences <= 0:
+        return [[] for _ in range(total_parts)]
+
+    base, rem = divmod(total_sentences, total_parts)
+    groups: List[List[int]] = []
+    cursor = 0
+    for p in range(total_parts):
+        count = base + (1 if p < rem else 0)
+        groups.append(list(range(cursor, cursor + count)))
+        cursor += count
+    return groups
+
+
+async def synthesize_sentence_group(
+    sentence_texts: List[str],
+    voice: str = DEFAULT_VOICE,
+    speed: float = 1.0,
+) -> Tuple[bytes, float, List[Tuple[float, float]]]:
+    """
+    Sintetiza un grupo de oraciones completas en una sola solicitud a edge-tts y
+    devuelve (audio_bytes, duration_seconds, [(start, end), ...]) alineado 1 a 1
+    con `sentence_texts`.
+    """
+    clean_texts = [s.strip() for s in sentence_texts if s.strip()]
+    if not clean_texts:
+        return b"", 0.0, [(0.0, 0.0) for _ in sentence_texts]
+
+    joined_text = " ".join(clean_texts)
+    rate_str = format_rate(speed)
+    semaphore = asyncio.Semaphore(1)
+    audio_bytes, raw_boundaries = await _synthesize_single_chunk(
+        joined_text, voice, rate_str, semaphore
+    )
+
+    duration = len(audio_bytes) / BYTES_PER_SECOND
+    if duration <= 0.0 and raw_boundaries:
+        duration = raw_boundaries[-1]["end"]
+
+    n = len(sentence_texts)
+    timings: List[Tuple[float, float]] = []
+
+    if len(raw_boundaries) == n and duration > 0:
+        raw_end = raw_boundaries[-1]["end"]
+        scale = (duration / raw_end) if raw_end > duration and raw_end > 0 else 1.0
+        for idx, b in enumerate(raw_boundaries):
+            s_start = round(b["start"] * scale, 3)
+            s_end = round(b["end"] * scale, 3)
+            if idx == n - 1 and duration > s_end:
+                s_end = round(duration, 3)
+            timings.append((s_start, max(s_start, s_end)))
+    else:
+        # Si edge-tts subdividió o fusionó alguna pausa interna, distribuimos la duración
+        # exacta del fragmento proporcionalmente a la longitud en caracteres de cada oración,
+        # garantizando correspondencia exacta 1 a 1 con las oraciones de la página.
+        weights = [max(1, len(s.strip())) for s in sentence_texts]
+        total_weight = sum(weights) or 1
+        cursor = 0.0
+        for idx, w in enumerate(weights):
+            seg_dur = (w / total_weight) * duration
+            s_start = round(cursor, 3)
+            cursor += seg_dur
+            s_end = round(duration if idx == n - 1 else cursor, 3)
+            timings.append((s_start, max(s_start, s_end)))
+
+    return bytes(audio_bytes), round(duration, 3), timings
 
 
 def _split_text_into_chunks(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:

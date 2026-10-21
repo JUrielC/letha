@@ -27,6 +27,8 @@ export interface ChapterDetail {
   text_content: string;
   sentences: SentenceItem[];
   has_audio: boolean;
+  loaded_parts: number;
+  total_parts: number;
   duration_seconds?: number;
 }
 
@@ -105,8 +107,10 @@ export const api = {
 
   getBook: (id: string) => request<BookDetail>(`/api/books/${id}`),
 
-  getChapter: (bookId: string, chapterIdx: number) =>
-    request<ChapterDetail>(`/api/books/${bookId}/chapters/${chapterIdx}`),
+  getChapter: (bookId: string, chapterIdx: number, voice?: string) => {
+    const query = voice ? `?voice=${encodeURIComponent(voice)}` : "";
+    return request<ChapterDetail>(`/api/books/${bookId}/chapters/${chapterIdx}${query}`);
+  },
 
   getVoices: () => request<VoiceItem[]>("/api/voices"),
 
@@ -144,18 +148,27 @@ export const api = {
   synthesizeChapter: (
     bookId: string,
     chapterIdx: number,
-    voice?: string
+    voice?: string,
+    part?: number,
+    totalParts: number = 5,
+    signal?: AbortSignal
   ) => {
     const params = new URLSearchParams();
     if (voice) params.append("voice", voice);
+    if (part !== undefined) params.append("part", part.toString());
+    if (totalParts !== undefined) params.append("total_parts", totalParts.toString());
     const query = params.toString() ? `?${params.toString()}` : "";
     return request<{
       status: string;
+      part: number;
+      total_parts: number;
+      is_complete: boolean;
       audio_url: string;
       duration: number;
       sentences: SentenceItem[];
     }>(`/api/books/${bookId}/chapters/${chapterIdx}/synthesize${query}`, {
       method: "POST",
+      signal,
     });
   },
 
