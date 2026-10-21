@@ -44,16 +44,20 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
 
     web_dir = web_dir.resolve()
     index_file = web_dir / "index.html"
-    index_content = index_file.read_text() if index_file.is_file() else "<h1>Letha Backend Running</h1>"
-
     config = json.dumps({"api": "", "token": token})
-    page = index_content.replace(
-        "<head>", f"<head><script>window.__LETHA__ = {config};</script>", 1
-    )
+
+    def render_html_file(file_path: Path) -> HTMLResponse:
+        if not file_path.is_file():
+            return HTMLResponse("<h1>Letha Backend Running</h1>", headers={"Cache-Control": "no-store"})
+        content = file_path.read_text(encoding="utf-8")
+        injected = content.replace(
+            "<head>", f"<head><script>window.__LETHA__ = {config};</script>", 1
+        )
+        return HTMLResponse(injected, headers={"Cache-Control": "no-store"})
 
     async def home(request):
         _touch()
-        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+        return render_html_file(index_file)
 
     static = StaticFiles(directory=web_dir) if web_dir.is_dir() else None
 
@@ -62,18 +66,21 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
         if static and scope["type"] == "http":
             rel_path = scope["path"].lstrip("/")
             target = (web_dir / rel_path).resolve() if rel_path else index_file
-            
+
             # Si el archivo exacto existe
             if target.is_file() and target.is_relative_to(web_dir):
+                if target.suffix == ".html":
+                    res = render_html_file(target)
+                    await res(scope, receive, send)
+                    return
                 await static(scope, receive, send)
                 return
 
             # Si piden /reader y existe reader.html
             html_target = (web_dir / f"{rel_path}.html").resolve()
             if html_target.is_file() and html_target.is_relative_to(web_dir):
-                scope_copy = dict(scope)
-                scope_copy["path"] = f"{scope['path']}.html"
-                await static(scope_copy, receive, send)
+                res = render_html_file(html_target)
+                await res(scope, receive, send)
                 return
 
         await api.app(scope, receive, send)

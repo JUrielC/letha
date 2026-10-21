@@ -132,8 +132,8 @@ function ReaderContent() {
 
     const idx = chapter.sentences.findIndex(
       (s) =>
-        s.start !== undefined &&
-        s.end !== undefined &&
+        typeof s.start === "number" &&
+        typeof s.end === "number" &&
         currentTime >= s.start &&
         currentTime < s.end
     );
@@ -199,7 +199,7 @@ function ReaderContent() {
       return;
     }
 
-    if (sentence.start !== undefined && audioRef.current) {
+    if (typeof sentence.start === "number" && audioRef.current) {
       audioRef.current.currentTime = sentence.start;
       setCurrentTime(sentence.start);
       setActiveSentenceIdx(sIdx);
@@ -430,7 +430,7 @@ function ReaderContent() {
                         : "hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                     title={
-                      s.start !== undefined
+                      typeof s.start === "number"
                         ? `Saltar a ${s.start.toFixed(1)}s`
                         : "Haz clic para escuchar"
                     }
