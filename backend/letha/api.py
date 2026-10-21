@@ -4,15 +4,17 @@ API REST de Letha con FastAPI.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+import json
 import os
 import shutil
 import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 
 from letha import database
 from letha.config import AUDIO_DIR, BOOKS_DIR, COVERS_DIR, DEFAULT_SPEED, DEFAULT_VOICE
@@ -27,23 +29,58 @@ from letha.models import (
 from letha.services import pdf as pdf_service
 from letha.services import tts as tts_service
 
-from contextlib import asynccontextmanager
+_required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
+_active_jobs: int = 0
+
+
+def set_token(token: Optional[str]) -> None:
+    """Establece el token de sesión requerido por la aplicación empaquetada."""
+    global _required_token
+    _required_token = token
+
+
+def busy() -> bool:
+    """Indica si hay alguna tarea de síntesis activa para evitar apagado por inactividad."""
+    return _active_jobs > 0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
     yield
 
+
+# Asegurar que las tablas existan incluso si la app se monta como sub-aplicación ASGI
+database.init_db()
+
 app = FastAPI(title="Letha API", version="0.1.0", lifespan=lifespan)
 
-# Permitir CORS para desarrollo con Next.js (localhost:3000, 127.0.0.1, etc.)
+# CORS restringido exclusivamente al entorno de desarrollo local (Next.js en puerto 3000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Letha-Token"],
 )
+
+
+@app.middleware("http")
+async def verify_token_middleware(request: Request, call_next):
+    if _required_token and request.method != "OPTIONS":
+        path = request.url.path
+        if path.startswith("/api/") and path != "/api/health":
+            header_token = request.headers.get("X-Letha-Token")
+            query_token = request.query_params.get("token")
+            if header_token != _required_token and query_token != _required_token:
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Token de sesión inválido o ausente."},
+                )
+    return await call_next(request)
 
 
 @app.get("/api/health")
@@ -59,6 +96,7 @@ async def get_voices():
 
 @app.get("/api/voices/preview")
 async def preview_voice(voice: str = DEFAULT_VOICE):
+    global _active_jobs
     preview_file = AUDIO_DIR / f"preview_{voice}.mp3"
     preview_align = AUDIO_DIR / f"preview_{voice}.json"
     if not preview_file.exists():
@@ -68,13 +106,17 @@ async def preview_voice(voice: str = DEFAULT_VOICE):
             if voice.lower().startswith("en-")
             else f"Hola, soy {persona}. Te acompañaré en la lectura de este libro."
         )
-        await tts_service.synthesize_text_to_audio(
-            text=sample_text,
-            voice=voice,
-            speed=1.0,
-            output_audio_path=preview_file,
-            output_alignment_path=preview_align,
-        )
+        _active_jobs += 1
+        try:
+            await tts_service.synthesize_text_to_audio(
+                text=sample_text,
+                voice=voice,
+                speed=1.0,
+                output_audio_path=preview_file,
+                output_alignment_path=preview_align,
+            )
+        finally:
+            _active_jobs -= 1
     return FileResponse(preview_file, media_type="audio/mpeg")
 
 
@@ -84,11 +126,15 @@ def get_books():
 
 
 @app.post("/api/books/upload", response_model=BookDetail)
-async def upload_book(
+def upload_book(
     file: UploadFile = File(...),
     voice: Optional[str] = Form(None),
 ):
-    if not file.filename.lower().endswith(".pdf"):
+    """
+    Definida como función síncrona (`def`) para que FastAPI la ejecute en su threadpool
+    sin bloquear el event loop mientras PyMuPDF analiza el documento y renderiza la portada.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Solo se admiten archivos PDF.",
@@ -97,11 +143,9 @@ async def upload_book(
     book_id = uuid.uuid4().hex[:12]
     saved_pdf_path = BOOKS_DIR / f"{book_id}.pdf"
 
-    # Guardar PDF subido
     with open(saved_pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Extraer metadatos, portada y capítulos
     try:
         book_info, chapters_data = pdf_service.extract_pdf_data(
             saved_pdf_path, COVERS_DIR
@@ -114,7 +158,6 @@ async def upload_book(
             detail=f"Error al procesar el PDF: {str(e)}",
         )
 
-    # Si el título extraído no está en los metadatos o es el ID, usar el nombre original del archivo
     orig_name = Path(file.filename or "Libro").stem
     meta_title = book_info.get("title")
     title = orig_name
@@ -156,7 +199,9 @@ def get_book_cover(book_id: str):
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
 
     with database.get_connection() as conn:
-        row = conn.execute("SELECT cover_path FROM books WHERE id = ?", (book_id,)).fetchone()
+        row = conn.execute(
+            "SELECT cover_path FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
         if not row or not row["cover_path"] or not Path(row["cover_path"]).exists():
             raise HTTPException(status_code=404, detail="Portada no disponible.")
         return FileResponse(row["cover_path"], media_type="image/png")
@@ -177,6 +222,7 @@ async def synthesize_chapter(
     voice: Optional[str] = None,
     speed: Optional[float] = None,
 ):
+    global _active_jobs
     book = database.get_book(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
@@ -186,17 +232,17 @@ async def synthesize_chapter(
         raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
 
     target_voice = voice or book.voice or DEFAULT_VOICE
-    target_speed = speed if speed is not None else (book.speed or DEFAULT_SPEED)
 
-    audio_filename = f"{book_id}_c{chapter_idx}_{target_voice}_{target_speed:.2f}.mp3"
-    alignment_filename = f"{book_id}_c{chapter_idx}_{target_voice}_{target_speed:.2f}.json"
+    # Siempre sintetizamos a velocidad base 1.0x; el cambio de velocidad se aplica
+    # mediante playbackRate en el reproductor HTML5 para evitar duplicar el factor
+    # y permitir cambiar la velocidad al instante sin re-sintetizar.
+    audio_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.mp3"
+    alignment_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.json"
 
     audio_path = AUDIO_DIR / audio_filename
     alignment_path = AUDIO_DIR / alignment_filename
 
-    # Si ya existe en caché, reutilizarlo
     if audio_path.exists() and alignment_path.exists():
-        import json
         with open(alignment_path, "r", encoding="utf-8") as f:
             sentences_data = json.load(f)
         total_duration = sentences_data[-1]["end"] if sentences_data else 0.0
@@ -215,14 +261,17 @@ async def synthesize_chapter(
             "sentences": sentences_data,
         }
 
-    # Si no, sintetizar de nuevo con edge-tts
-    duration, sentences_alignment = await tts_service.synthesize_text_to_audio(
-        text=chapter.text_content,
-        voice=target_voice,
-        speed=target_speed,
-        output_audio_path=audio_path,
-        output_alignment_path=alignment_path,
-    )
+    _active_jobs += 1
+    try:
+        duration, sentences_alignment = await tts_service.synthesize_text_to_audio(
+            text=chapter.text_content,
+            voice=target_voice,
+            speed=1.0,
+            output_audio_path=audio_path,
+            output_alignment_path=alignment_path,
+        )
+    finally:
+        _active_jobs -= 1
 
     database.update_chapter_audio(
         book_id=book_id,
@@ -280,14 +329,12 @@ def delete_book(book_id: str):
     if not info:
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
 
-    # Eliminar archivos del disco si existen
     for key in ("file_path", "cover_path"):
         if info.get(key):
             p = Path(info[key])
             if p.exists():
                 p.unlink()
 
-    # Eliminar audios generados para este libro
     for audio_file in AUDIO_DIR.glob(f"{book_id}_*"):
         try:
             audio_file.unlink()
@@ -300,6 +347,7 @@ def delete_book(book_id: str):
 def run():
     """Ejecutor para pruebas o desarrollo independiente."""
     import uvicorn
+
     uvicorn.run("letha.api:app", host="127.0.0.1", port=47830, reload=True)
 
 

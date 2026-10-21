@@ -29,7 +29,7 @@ PREFERRED_PORT = 47830
 STATE_FILE = CACHE_DIR / "instance.json"
 LOG_FILE = CACHE_DIR / "letha.log"
 LOCAL_HOSTS = ["127.0.0.1", "localhost"]
-IDLE_SECONDS = 90
+IDLE_SECONDS = 300
 
 _last_seen = time.monotonic()
 
@@ -57,7 +57,10 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
     from starlette.routing import Mount, Route
     from starlette.staticfiles import StaticFiles
 
-    from letha import api
+    from letha import api, database
+
+    database.init_db()
+    api.set_token(token)
 
     web_dir = web_dir.resolve()
     index_file = web_dir / "index.html"
@@ -107,6 +110,7 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
 
     return Starlette(
         routes=routes,
+        lifespan=api.lifespan,
         middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=LOCAL_HOSTS)],
     )
 
@@ -118,10 +122,31 @@ def _touch() -> None:
 
 def _shutdown_when_idle(server, idle_seconds: float = IDLE_SECONDS, poll: float = 10.0) -> None:
     """Cierra el servidor automáticamente cuando la ventana lleva cerrada más de `idle_seconds`."""
+    from letha import api
+
     while not server.should_exit:
         time.sleep(poll)
+        if api.busy():
+            _touch()
+            continue
         if time.monotonic() - _last_seen > idle_seconds:
             server.should_exit = True
+
+
+def _watch_parent(server, parent_pid: int, poll: float = 2.0) -> None:
+    """En modo nativo (macOS), vigila el proceso padre (Letha.app) por si se cierra forzosamente."""
+    while not server.should_exit:
+        time.sleep(poll)
+        if os.getppid() != parent_pid:
+            server.should_exit = True
+            return
+        try:
+            os.kill(parent_pid, 0)
+        except ProcessLookupError:
+            server.should_exit = True
+            return
+        except PermissionError:
+            pass
 
 
 def _bind(port: int) -> socket.socket:
@@ -180,10 +205,15 @@ def main():
     _ensure_stdio()
     import uvicorn
 
+    is_native = os.environ.get("LETHA_NATIVE") == "1"
+
     existing = _running_instance()
     if existing:
-        print(f"Letha ya está en ejecución en {existing}. Abriendo interfaz...", flush=True)
-        open_ui(existing)
+        if is_native:
+            print(f"{READY_PREFIX} {existing} owner=existing", flush=True)
+        else:
+            print(f"Letha ya está en ejecución en {existing}. Abriendo interfaz...", flush=True)
+            open_ui(existing)
         return
 
     sock = _bind(PREFERRED_PORT)
@@ -194,9 +224,7 @@ def main():
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps({"url": url, "token": token, "port": port}), encoding="utf-8")
 
-    is_native = os.environ.get("LETHA_NATIVE") == "1"
-
-    print(f"{READY_PREFIX} {url}", flush=True)
+    print(f"{READY_PREFIX} {url} owner=new", flush=True)
 
     if not is_native:
         threading.Timer(0.6, lambda: open_ui(url)).start()
@@ -211,7 +239,13 @@ def main():
     )
     server = uvicorn.Server(config)
 
-    if not is_native:
+    if is_native:
+        parent_pid = os.getppid()
+        if parent_pid > 1:
+            threading.Thread(
+                target=_watch_parent, args=(server, parent_pid), daemon=True
+            ).start()
+    else:
         threading.Thread(
             target=_shutdown_when_idle, args=(server,), daemon=True
         ).start()

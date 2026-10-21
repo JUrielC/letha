@@ -27,6 +27,7 @@ import {
   SentenceItem,
   VoiceItem,
   getBaseUrl,
+  withTokenUrl,
 } from "@/lib/api";
 
 type Theme = "light" | "sepia" | "dark";
@@ -39,7 +40,7 @@ function ReaderContent() {
   // Estados de datos
   const [book, setBook] = useState<BookDetail | null>(null);
   const [chapter, setChapter] = useState<ChapterDetail | null>(null);
-  const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
+  const [currentChapterIdx, setCurrentChapterIdx] = useState<number | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
@@ -60,6 +61,9 @@ function ReaderContent() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
+  const pendingSentenceIdxRef = useRef<number | null>(null);
+  const pendingSeekTimeRef = useRef<number | null>(null);
+  const isInitialLoadRef = useRef<boolean>(true);
 
   // Cargar preferencias guardadas y tema
   useEffect(() => {
@@ -90,11 +94,13 @@ function ReaderContent() {
   // Cargar libro inicial
   useEffect(() => {
     if (!bookId) return;
+    isInitialLoadRef.current = true;
     api
       .getBook(bookId)
       .then((b) => {
         setBook(b);
-        setCurrentChapterIdx(b.current_chapter_idx || 0);
+        pendingSentenceIdxRef.current = b.current_sentence_idx || 0;
+        setCurrentChapterIdx(b.current_chapter_idx ?? 0);
         if (b.voice) setSelectedVoice(b.voice);
         if (b.speed) setPlaybackSpeed(b.speed);
       })
@@ -104,24 +110,55 @@ function ReaderContent() {
   // Precarga en segundo plano de la siguiente página para transición instantánea
   const prefetchNextChapter = (nextIdx: number) => {
     if (!bookId || !book || nextIdx >= book.total_chapters) return;
-    api.synthesizeChapter(bookId, nextIdx, selectedVoice, playbackSpeed).catch(() => {});
+    api.synthesizeChapter(bookId, nextIdx, selectedVoice).catch(() => {});
   };
 
-  // Cargar capítulo cuando cambie currentChapterIdx
+  // Cargar capítulo cuando cambie currentChapterIdx (solo después de cargar el libro)
   useEffect(() => {
-    if (!bookId) return;
+    if (!bookId || currentChapterIdx === null) return;
+    const chapterIdx = currentChapterIdx;
+
     setIsPlaying(false);
-    setActiveSentenceIdx(-1);
     setCurrentTime(0);
+    pendingSeekTimeRef.current = null;
+
+    const restoredSentence =
+      pendingSentenceIdxRef.current !== null ? pendingSentenceIdxRef.current : -1;
+    pendingSentenceIdxRef.current = null;
+
+    setActiveSentenceIdx(restoredSentence >= 0 ? restoredSentence : -1);
+
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+    } else {
+      api.updateProgress(bookId, chapterIdx, 0).catch(console.error);
+    }
 
     api
-      .getChapter(bookId, currentChapterIdx)
+      .getChapter(bookId, chapterIdx)
       .then((c) => {
         setChapter(c);
+
+        if (restoredSentence > 0 && restoredSentence < c.sentences.length) {
+          const targetSentence = c.sentences[restoredSentence];
+          if (typeof targetSentence?.start === "number") {
+            pendingSeekTimeRef.current = targetSentence.start;
+            setCurrentTime(targetSentence.start);
+          }
+          setTimeout(() => {
+            sentenceRefs.current[restoredSentence]?.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+          }, 120);
+        }
+
         if (c.has_audio) {
           const base = getBaseUrl();
           setAudioUrl(
-            `${base}/api/books/${bookId}/chapters/${currentChapterIdx}/audio?t=${Date.now()}`
+            withTokenUrl(
+              `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?t=${Date.now()}`
+            )
           );
           if (autoContinue) {
             setTimeout(() => {
@@ -130,7 +167,7 @@ function ReaderContent() {
                 setIsPlaying(true);
               }
             }, 150);
-            prefetchNextChapter(currentChapterIdx + 1);
+            prefetchNextChapter(chapterIdx + 1);
           }
         } else {
           setAudioUrl(null);
@@ -138,7 +175,7 @@ function ReaderContent() {
             // Sintetizar automáticamente al pasar de página en reproducción continua
             setIsSynthesizing(true);
             api
-              .synthesizeChapter(bookId, currentChapterIdx, selectedVoice, playbackSpeed)
+              .synthesizeChapter(bookId, chapterIdx, selectedVoice)
               .then((res) => {
                 setChapter((prev) =>
                   prev
@@ -151,14 +188,14 @@ function ReaderContent() {
                     : null
                 );
                 const base = getBaseUrl();
-                setAudioUrl(`${base}${res.audio_url}?t=${Date.now()}`);
+                setAudioUrl(withTokenUrl(`${base}${res.audio_url}?t=${Date.now()}`));
                 setTimeout(() => {
                   if (audioRef.current) {
                     audioRef.current.play().catch(console.error);
                     setIsPlaying(true);
                   }
                 }, 150);
-                prefetchNextChapter(currentChapterIdx + 1);
+                prefetchNextChapter(chapterIdx + 1);
               })
               .catch(console.error)
               .finally(() => setIsSynthesizing(false));
@@ -166,14 +203,11 @@ function ReaderContent() {
         }
       })
       .catch(console.error);
-
-    // Guardar progreso
-    api.updateProgress(bookId, currentChapterIdx, 0).catch(console.error);
   }, [bookId, currentChapterIdx]);
 
   // Sincronización Karaoke: Detectar oración activa según currentTime
   useEffect(() => {
-    if (!chapter?.sentences || chapter.sentences.length === 0) return;
+    if (!chapter?.sentences || chapter.sentences.length === 0 || !isPlaying) return;
 
     const idx = chapter.sentences.findIndex(
       (s) =>
@@ -185,6 +219,9 @@ function ReaderContent() {
 
     if (idx !== -1 && idx !== activeSentenceIdx) {
       setActiveSentenceIdx(idx);
+      if (bookId && currentChapterIdx !== null) {
+        api.updateProgress(bookId, currentChapterIdx, idx).catch(console.error);
+      }
 
       // Auto-scroll suave hacia la oración activa
       const elem = sentenceRefs.current[idx];
@@ -192,18 +229,17 @@ function ReaderContent() {
         elem.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [currentTime, chapter, activeSentenceIdx]);
+  }, [currentTime, chapter, activeSentenceIdx, isPlaying, bookId, currentChapterIdx]);
 
   // Generar o re-generar audio para el capítulo
   const handleSynthesize = async () => {
-    if (!chapter || !bookId) return;
+    if (!chapter || !bookId || currentChapterIdx === null) return;
     setIsSynthesizing(true);
     try {
       const res = await api.synthesizeChapter(
         bookId,
         currentChapterIdx,
-        selectedVoice,
-        playbackSpeed
+        selectedVoice
       );
 
       // Actualizar datos del capítulo con los timestamps generados
@@ -219,7 +255,7 @@ function ReaderContent() {
       );
 
       const base = getBaseUrl();
-      const newUrl = `${base}${res.audio_url}?t=${Date.now()}`;
+      const newUrl = withTokenUrl(`${base}${res.audio_url}?t=${Date.now()}`);
       setAudioUrl(newUrl);
 
       // Comenzar reproducción automáticamente y precargar la siguiente página
@@ -239,6 +275,11 @@ function ReaderContent() {
 
   // Clic en una oración: saltar audio a esa posición
   const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
+    setActiveSentenceIdx(sIdx);
+    if (bookId && currentChapterIdx !== null) {
+      api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
+    }
+
     if (!audioUrl) {
       // Si aún no hay audio, sugerir generarlo
       handleSynthesize();
@@ -248,7 +289,6 @@ function ReaderContent() {
     if (typeof sentence.start === "number" && audioRef.current) {
       audioRef.current.currentTime = sentence.start;
       setCurrentTime(sentence.start);
-      setActiveSentenceIdx(sIdx);
       if (!isPlaying) {
         audioRef.current.play().catch(console.error);
         setIsPlaying(true);
@@ -334,11 +374,16 @@ function ReaderContent() {
             if (audioRef.current) {
               setDuration(audioRef.current.duration);
               audioRef.current.playbackRate = playbackSpeed;
+              if (pendingSeekTimeRef.current !== null) {
+                audioRef.current.currentTime = pendingSeekTimeRef.current;
+                setCurrentTime(pendingSeekTimeRef.current);
+                pendingSeekTimeRef.current = null;
+              }
             }
           }}
           onEnded={() => {
             setIsPlaying(false);
-            if (book && currentChapterIdx + 1 < book.total_chapters) {
+            if (book && currentChapterIdx !== null && currentChapterIdx + 1 < book.total_chapters) {
               setAutoContinue(true);
               setCurrentChapterIdx(currentChapterIdx + 1);
             }
@@ -566,8 +611,10 @@ function ReaderContent() {
               {/* Botones de control */}
               <div className="flex items-center justify-between">
                 <button
-                  disabled={currentChapterIdx <= 0}
-                  onClick={() => setCurrentChapterIdx(currentChapterIdx - 1)}
+                  disabled={currentChapterIdx === null || currentChapterIdx <= 0}
+                  onClick={() =>
+                    currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx - 1)
+                  }
                   className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
                   title="Capítulo anterior"
                 >
@@ -619,8 +666,14 @@ function ReaderContent() {
                   </select>
 
                   <button
-                    disabled={!book || currentChapterIdx + 1 >= book.total_chapters}
-                    onClick={() => setCurrentChapterIdx(currentChapterIdx + 1)}
+                    disabled={
+                      !book ||
+                      currentChapterIdx === null ||
+                      currentChapterIdx + 1 >= book.total_chapters
+                    }
+                    onClick={() =>
+                      currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx + 1)
+                    }
                     className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
                     title="Siguiente capítulo"
                   >

@@ -5,10 +5,19 @@ import { getBaseUrl } from "@/lib/api";
 
 export function KeepAlive() {
   useEffect(() => {
-    const interval = setInterval(() => {
+    const ping = () => {
       fetch(`${getBaseUrl()}/api/health`).catch(() => {});
-    }, 30000);
-    return () => clearInterval(interval);
+    };
+
+    const interval = setInterval(ping, 15000);
+    window.addEventListener("focus", ping);
+    document.addEventListener("visibilitychange", ping);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", ping);
+      document.removeEventListener("visibilitychange", ping);
+    };
   }, []);
 
   return null;

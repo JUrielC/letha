@@ -169,8 +169,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stdoutBuffer.removeSubrange(..<(newlineIndex + 1))
             guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
             if line.hasPrefix(readyPrefix) {
-                let rest = line.dropFirst(readyPrefix.count)
-                if let url = URL(string: String(rest)) {
+                let parts = line.dropFirst(readyPrefix.count).split(separator: " ")
+                if let urlPart = parts.first, let url = URL(string: String(urlPart)) {
+                    if parts.contains("owner=existing") {
+                        ownsServer = false
+                    }
                     open(url)
                     return
                 }
@@ -179,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func serverDidExit(_ p: Process) {
-        if terminating { return }
+        if terminating || !ownsServer { return }
         log("El servidor terminó inesperadamente (código \(p.terminationStatus))")
         showError("El servidor de Letha se detuvo inesperadamente.\nRevisa el log en ~/Library/Logs/letha.log.")
     }

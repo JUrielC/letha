@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
+import { api, BookSummary, VoiceItem, getBaseUrl, withTokenUrl } from "@/lib/api";
 import { BookOpen, Trash2, User } from "lucide-react";
 
 interface BookCardProps {
@@ -19,7 +19,7 @@ export function BookCard({ book, voices, onDelete, onVoiceChange }: BookCardProp
     book.total_chapters > 0
       ? Math.round(((book.current_chapter_idx + 1) / book.total_chapters) * 100)
       : 0;
-  const coverSrc = book.cover_url ? `${getBaseUrl()}${book.cover_url}` : null;
+  const coverSrc = book.cover_url ? withTokenUrl(`${getBaseUrl()}${book.cover_url}`) : null;
 
   const handleSelectVoice = async (newVoice: string) => {
     setSelectedVoice(newVoice);

@@ -77,10 +77,29 @@ export function getBaseUrl(): string {
   return "";
 }
 
+export function getToken(): string {
+  if (typeof window !== "undefined" && window.__LETHA__?.token) {
+    return window.__LETHA__.token;
+  }
+  return "";
+}
+
+export function withTokenUrl(url: string): string {
+  const token = getToken();
+  if (!token) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getBaseUrl();
   const url = `${base}${path}`;
-  const res = await fetch(url, options);
+  const token = getToken();
+  const headers = new Headers(options?.headers || {});
+  if (token) {
+    headers.set("X-Letha-Token", token);
+  }
+  const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(errData.detail || `Error ${res.status}`);
@@ -99,18 +118,25 @@ export const api = {
   getVoices: () => request<VoiceItem[]>("/api/voices"),
 
   getVoicePreviewUrl: (voice: string) =>
-    `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,
+    withTokenUrl(`${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`),
 
   uploadBook: async (file: File, voice?: string): Promise<BookDetail> => {
     const base = getBaseUrl();
+    const token = getToken();
     const formData = new FormData();
     formData.append("file", file);
     if (voice) {
       formData.append("voice", voice);
     }
 
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["X-Letha-Token"] = token;
+    }
+
     const res = await fetch(`${base}/api/books/upload`, {
       method: "POST",
+      headers,
       body: formData,
     });
 
@@ -125,12 +151,10 @@ export const api = {
   synthesizeChapter: (
     bookId: string,
     chapterIdx: number,
-    voice?: string,
-    speed?: number
+    voice?: string
   ) => {
     const params = new URLSearchParams();
     if (voice) params.append("voice", voice);
-    if (speed !== undefined) params.append("speed", speed.toString());
     const query = params.toString() ? `?${params.toString()}` : "";
     return request<{
       status: string;

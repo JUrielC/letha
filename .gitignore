@@ -29,6 +29,7 @@ MANIFEST
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+*.tsbuildinfo
 
 # Compilados locales para el paquete Python (se generan en build-release)
 backend/letha/web/
