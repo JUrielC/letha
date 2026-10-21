@@ -36,6 +36,7 @@ backend/letha/bin/
 
 # Cache local y datos temporales
 .cache/
+.dev.pids
 *.log
 .env
 .DS_Store
