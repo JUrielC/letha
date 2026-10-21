@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
@@ -57,13 +57,37 @@ async def get_voices():
     return voices
 
 
+@app.get("/api/voices/preview")
+async def preview_voice(voice: str = DEFAULT_VOICE):
+    preview_file = AUDIO_DIR / f"preview_{voice}.mp3"
+    preview_align = AUDIO_DIR / f"preview_{voice}.json"
+    if not preview_file.exists():
+        persona = tts_service._extract_persona_name(voice)
+        sample_text = (
+            f"Hello, I am {persona}. I will read this book for you."
+            if voice.lower().startswith("en-")
+            else f"Hola, soy {persona}. Te acompañaré en la lectura de este libro."
+        )
+        await tts_service.synthesize_text_to_audio(
+            text=sample_text,
+            voice=voice,
+            speed=1.0,
+            output_audio_path=preview_file,
+            output_alignment_path=preview_align,
+        )
+    return FileResponse(preview_file, media_type="audio/mpeg")
+
+
 @app.get("/api/books", response_model=List[BookSummary])
 def get_books():
     return database.list_books()
 
 
 @app.post("/api/books/upload", response_model=BookDetail)
-async def upload_book(file: UploadFile = File(...)):
+async def upload_book(
+    file: UploadFile = File(...),
+    voice: Optional[str] = Form(None),
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,6 +121,8 @@ async def upload_book(file: UploadFile = File(...)):
     if meta_title and meta_title != book_id and meta_title.lower() != "untitled":
         title = meta_title
 
+    chosen_voice = voice if voice else DEFAULT_VOICE
+
     database.insert_book(
         book_id=book_id,
         title=title,
@@ -105,7 +131,7 @@ async def upload_book(file: UploadFile = File(...)):
         cover_path=book_info["cover_path"],
         total_pages=book_info["total_pages"],
         chapters_data=chapters_data,
-        voice=DEFAULT_VOICE,
+        voice=chosen_voice,
         speed=DEFAULT_SPEED,
     )
 

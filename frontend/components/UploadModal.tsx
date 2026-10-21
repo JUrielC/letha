@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { UploadCloud, X, Loader2, FileText } from "lucide-react";
-import { api } from "@/lib/api";
+import React, { useState, useRef, useEffect } from "react";
+import { UploadCloud, X, Loader2, FileText, Volume2, User } from "lucide-react";
+import { api, VoiceItem } from "@/lib/api";
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -12,10 +12,33 @@ interface UploadModalProps {
 
 export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [voices, setVoices] = useState<VoiceItem[]>([]);
+  const [langFilter, setLangFilter] = useState<"es" | "en" | "all">("es");
+  const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
+  const [previewing, setPreviewing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen && voices.length === 0) {
+      api.getVoices().then(setVoices).catch(console.error);
+    }
+  }, [isOpen, voices.length]);
+
+  const filteredVoices = voices.filter((v) => {
+    if (langFilter === "es") return v.locale.toLowerCase().startsWith("es-");
+    if (langFilter === "en") return v.locale.toLowerCase().startsWith("en-");
+    return true;
+  });
+
+  useEffect(() => {
+    if (filteredVoices.length > 0 && !filteredVoices.some((v) => v.short_name === selectedVoice)) {
+      setSelectedVoice(filteredVoices[0].short_name);
+    }
+  }, [langFilter, voices]);
 
   if (!isOpen) return null;
 
@@ -54,13 +77,33 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
     }
   };
 
+  const handlePreviewVoice = async () => {
+    if (!selectedVoice || previewing) return;
+    setPreviewing(true);
+    try {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+      }
+      const audio = new Audio(api.getVoicePreviewUrl(selectedVoice));
+      previewAudioRef.current = audio;
+      audio.onended = () => setPreviewing(false);
+      audio.onerror = () => setPreviewing(false);
+      await audio.play();
+    } catch {
+      setPreviewing(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
     setLoading(true);
     setError(null);
 
     try {
-      await api.uploadBook(file);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+      }
+      await api.uploadBook(file, selectedVoice);
       setFile(null);
       onSuccess();
       onClose();
@@ -84,8 +127,65 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
 
         <h3 className="text-lg font-bold mb-1">Importar libro en PDF</h3>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-          Letha analizará la portada, capítulos y preparará el texto para lectura con voz neural.
+          Selecciona tu PDF y elige la persona que narrará el libro.
         </p>
+
+        {/* Selector de Persona / Narrador antes de cargar el libro */}
+        <div className="mb-4 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <User className="w-3.5 h-3.5 text-amber-500" />
+              <span>Persona que habla (Narrador)</span>
+            </label>
+
+            <div className="flex items-center gap-1 text-[11px]">
+              {(["es", "en", "all"] as const).map((lf) => (
+                <button
+                  key={lf}
+                  type="button"
+                  onClick={() => setLangFilter(lf)}
+                  className={`px-2 py-0.5 rounded-md font-medium transition ${
+                    langFilter === lf
+                      ? "bg-amber-500 text-white"
+                      : "text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  {lf === "es" ? "Español" : lf === "en" ? "Inglés" : "Todos"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedVoice}
+              onChange={(e) => setSelectedVoice(e.target.value)}
+              disabled={loading}
+              className="flex-1 text-xs font-medium bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+            >
+              {filteredVoices.map((v) => (
+                <option key={v.short_name} value={v.short_name}>
+                  {v.friendly_name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={handlePreviewVoice}
+              disabled={previewing || loading}
+              className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 disabled:opacity-50 transition shrink-0"
+              title="Escuchar voz de esta persona"
+            >
+              {previewing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" />
+              )}
+              <span>Probar</span>
+            </button>
+          </div>
+        </div>
 
         <div
           onDragOver={handleDragOver}

@@ -98,10 +98,16 @@ export const api = {
 
   getVoices: () => request<VoiceItem[]>("/api/voices"),
 
-  uploadBook: async (file: File): Promise<BookDetail> => {
+  getVoicePreviewUrl: (voice: string) =>
+    `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,
+
+  uploadBook: async (file: File, voice?: string): Promise<BookDetail> => {
     const base = getBaseUrl();
     const formData = new FormData();
     formData.append("file", file);
+    if (voice) {
+      formData.append("voice", voice);
+    }
 
     const res = await fetch(`${base}/api/books/upload`, {
       method: "POST",

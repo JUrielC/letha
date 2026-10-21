@@ -20,9 +20,52 @@ MAX_CHUNK_CHARS = 450
 MAX_CONCURRENCY = 8
 
 
+LOCALE_LABELS = {
+    "es-MX": "Español (México)",
+    "es-ES": "Español (España)",
+    "es-AR": "Español (Argentina)",
+    "es-CO": "Español (Colombia)",
+    "es-CL": "Español (Chile)",
+    "es-PE": "Español (Perú)",
+    "es-VE": "Español (Venezuela)",
+    "es-UY": "Español (Uruguay)",
+    "es-EC": "Español (Ecuador)",
+    "es-CR": "Español (Costa Rica)",
+    "es-PA": "Español (Panamá)",
+    "es-DO": "Español (Rep. Dominicana)",
+    "es-GT": "Español (Guatemala)",
+    "es-HN": "Español (Honduras)",
+    "es-NI": "Español (Nicaragua)",
+    "es-PR": "Español (Puerto Rico)",
+    "es-PY": "Español (Paraguay)",
+    "es-SV": "Español (El Salvador)",
+    "es-BO": "Español (Bolivia)",
+    "es-CU": "Español (Cuba)",
+    "es-GQ": "Español (Guinea Ecuatorial)",
+    "es-US": "Español (EE.UU.)",
+    "en-US": "Inglés (EE.UU.)",
+    "en-GB": "Inglés (Reino Unido)",
+    "en-AU": "Inglés (Australia)",
+    "en-CA": "Inglés (Canadá)",
+    "en-IE": "Inglés (Irlanda)",
+    "fr-FR": "Francés (Francia)",
+    "pt-BR": "Portugués (Brasil)",
+    "pt-PT": "Portugués (Portugal)",
+    "de-DE": "Alemán (Alemania)",
+    "it-IT": "Italiano (Italia)",
+}
+
+
+def _extract_persona_name(short_name: str) -> str:
+    parts = short_name.split("-")
+    raw = parts[2] if len(parts) >= 3 else short_name
+    raw = re.sub(r"(Multilingual)?Neural$", "", raw)
+    return raw or short_name
+
+
 async def list_available_voices() -> List[Dict[str, str]]:
     """
-    Lista las voces neurales de edge-tts, priorizando español y luego inglés y otros idiomas.
+    Lista las voces neurales de edge-tts con nombres legibles de persona, idioma y género.
     """
     voices = await edge_tts.list_voices()
     formatted = []
@@ -30,10 +73,13 @@ async def list_available_voices() -> List[Dict[str, str]]:
         short_name = v.get("ShortName", "")
         locale = v.get("Locale", "")
         gender = v.get("Gender", "")
-        friendly_name = f"{short_name} ({gender}, {locale})"
+        persona = _extract_persona_name(short_name)
+        lang_label = LOCALE_LABELS.get(locale, locale)
+        gender_label = "Mujer" if gender == "Female" else "Hombre" if gender == "Male" else gender
+        friendly_name = f"{persona} — {lang_label} · {gender_label}"
         formatted.append(
             {
-                "name": short_name,
+                "name": persona,
                 "short_name": short_name,
                 "gender": gender,
                 "locale": locale,

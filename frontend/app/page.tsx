@@ -4,11 +4,12 @@ import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { BookCard } from "@/components/BookCard";
 import { UploadModal } from "@/components/UploadModal";
-import { api, BookSummary } from "@/lib/api";
+import { api, BookSummary, VoiceItem } from "@/lib/api";
 import { BookPlus, Loader2, Sparkles } from "lucide-react";
 
 export default function HomePage() {
   const [books, setBooks] = useState<BookSummary[]>([]);
+  const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -26,6 +27,7 @@ export default function HomePage() {
 
   useEffect(() => {
     loadBooks();
+    api.getVoices().then(setVoices).catch(console.error);
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -35,6 +37,12 @@ export default function HomePage() {
     } catch (err) {
       console.error("Error al eliminar libro:", err);
     }
+  };
+
+  const handleVoiceChange = (bookId: string, newVoice: string) => {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === bookId ? { ...b, voice: newVoice } : b))
+    );
   };
 
   return (
@@ -64,7 +72,13 @@ export default function HomePage() {
         ) : books.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
             {books.map((book) => (
-              <BookCard key={book.id} book={book} onDelete={handleDelete} />
+              <BookCard
+                key={book.id}
+                book={book}
+                voices={voices}
+                onDelete={handleDelete}
+                onVoiceChange={handleVoiceChange}
+              />
             ))}
           </div>
         ) : (

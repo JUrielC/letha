@@ -278,6 +278,11 @@ function ReaderContent() {
 
   const handleVoiceChange = async (newVoice: string) => {
     setSelectedVoice(newVoice);
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setIsPlaying(false);
+    setAudioUrl(null);
     if (bookId) {
       await api.updateSettings(bookId, newVoice, playbackSpeed).catch(console.error);
     }
@@ -390,7 +395,8 @@ function ReaderContent() {
             <select
               value={selectedVoice}
               onChange={(e) => handleVoiceChange(e.target.value)}
-              className="hidden md:block text-xs font-medium bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+              className="hidden md:block max-w-[240px] text-xs font-medium bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+              title="Cambiar persona que narra"
             >
               {voices.map((v) => (
                 <option
@@ -398,7 +404,7 @@ function ReaderContent() {
                   value={v.short_name}
                   className="bg-white dark:bg-zinc-900"
                 >
-                  {v.short_name} ({v.locale})
+                  {v.friendly_name}
                 </option>
               ))}
             </select>
@@ -495,18 +501,31 @@ function ReaderContent() {
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95 border-zinc-200 dark:border-zinc-800 shadow-2xl px-4 py-3">
         <div className="max-w-3xl mx-auto flex flex-col gap-2">
           {!audioUrl && !isSynthesizing ? (
-            <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2.5">
               <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
-                <Volume2 className="w-4 h-4 text-amber-500" />
-                <span>¿Quieres escuchar este capítulo narrado en voz alta?</span>
+                <Volume2 className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Elige quién narra y escucha esta página:</span>
               </div>
-              <button
-                onClick={handleSynthesize}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span>Narrar con Edge-TTS</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedVoice}
+                  onChange={(e) => handleVoiceChange(e.target.value)}
+                  className="flex-1 sm:max-w-[230px] text-xs font-medium bg-white dark:bg-zinc-900 border border-amber-500/30 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+                >
+                  {voices.map((v) => (
+                    <option key={v.short_name} value={v.short_name}>
+                      {v.friendly_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleSynthesize}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition shrink-0"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span>Narrar</span>
+                </button>
+              </div>
             </div>
           ) : isSynthesizing ? (
             <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">
