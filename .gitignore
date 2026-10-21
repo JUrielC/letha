@@ -34,11 +34,19 @@ frontend/out/
 backend/letha/web/
 backend/letha/bin/
 
-# Cache local y datos temporales
+# Cache local, bases de datos, libros y datos temporales
 .cache/
 .dev.pids
 *.log
 .env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+*.pdf
+*.mp3
+*.wav
 .DS_Store
 
 # Swift build
