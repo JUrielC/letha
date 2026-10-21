@@ -1,12 +1,12 @@
 # Letha
 
-Lector de libros en PDF y audiolibro interactivo para macOS. Lee tus libros en una interfaz limpia mientras los escuchas narrados con voces neurales ultra-realistas (las mismas que usa Microsoft Edge), con el texto resaltado en tiempo real estilo karaoke.
+Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus libros en una interfaz limpia mientras los escuchas narrados con voces neurales ultra-realistas (las mismas que usa Microsoft Edge), con el texto resaltado en tiempo real estilo karaoke.
 
 ---
 
 ## Características
 
-- **Extracción limpia de PDFs:** Usa `PyMuPDF` para estructurar capítulos, detectar la tabla de contenidos (TOC) y filtrar encabezados y números de página que arruinarían la lectura de voz.
+- **Extracción limpia de PDFs:** Usa `PyMuPDF` para estructurar páginas, detectar la tabla de contenidos (TOC) y filtrar encabezados y números de página que arruinarían la lectura de voz.
 - **Voces Neurales Gratuitas:** Integración con `edge-tts` (el mismo motor utilizado en `pyvideotrans`), con decenas de voces humanas de alta fidelidad en español (México, España, Argentina, etc.) y otros idiomas.
 - **Efecto Karaoke (Sincronización exacta):** Captura eventos de `SentenceBoundary` para sincronizar y resaltar la frase que se está reproduciendo en cada milisegundo con auto-desplazamiento suave.
 - **Navegación Interactiva:** Haz clic en cualquier oración del texto para saltar la reproducción inmediatamente a ese punto exacto.
@@ -17,7 +17,9 @@ Lector de libros en PDF y audiolibro interactivo para macOS. Lee tus libros en u
 
 ## Instalación
 
-Necesitas una Mac con Apple Silicon (M1 o posterior). Abre la app **Terminal** (⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
+### En macOS (Apple Silicon)
+
+Abre la app **Terminal** (⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.sh | sh
@@ -25,16 +27,37 @@ curl -fsSL https://raw.githubusercontent.com/JUrielC/letha/master/scripts/instal
 
 Cuando termine, Letha queda en tu carpeta de **Aplicaciones**: ábrelo con Spotlight (⌘ + espacio, "Letha") o con doble clic.
 
+### En Windows (Windows 10 / 11)
+
+En **PowerShell**:
+
+```powershell
+irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex
+```
+
+O en **CMD (Símbolo del sistema)**:
+
+```cmd
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex"
+```
+
+Cuando termine, Letha creará un acceso directo en tu **Escritorio** y en el **Menú Inicio** (presiona la tecla Windows y escribe "Letha"), abriéndose en su propia ventana sin consola.
+
 ### ¿Por qué se instala por Terminal?
-macOS bloquea las aplicaciones descargadas desde el navegador si no pagan la cuota de desarrollador y notarización de Apple. Lo que se instala desde la Terminal con `uv` no lleva la marca de cuarentena (`com.apple.quarantine`), por lo que se abre sin advertencias de Gatekeeper.
+Tanto macOS (Gatekeeper) como Windows (SmartScreen) bloquean los instaladores descargados desde el navegador si no cuentan con certificados comerciales de pago. Lo que se instala desde la Terminal con `uv` crea el acceso directo en tu propio equipo, por lo que se abre con doble clic sin advertencias de seguridad.
 
 ### Actualizar o desinstalar
 
-Para **actualizar**, vuelve a ejecutar el mismo comando de instalación.
+Para **actualizar**, vuelve a ejecutar el mismo comando de instalación de tu sistema.
 
-Para **desinstalar**:
+Para **desinstalar en macOS**:
 ```bash
 uv tool uninstall letha && rm -rf ~/Applications/Letha.app ~/.cache/letha ~/.local/share/letha
+```
+
+Para **desinstalar en Windows (PowerShell)**:
+```powershell
+uv tool uninstall letha; Remove-Item "$env:USERPROFILE\Desktop\Letha.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Letha.lnk", "$env:USERPROFILE\.cache\letha", "$env:USERPROFILE\.local\share\letha" -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
 ---
@@ -46,33 +69,23 @@ Si quieres clonar el repositorio y modificarlo:
 ### Requisitos
 - [uv](https://docs.astral.sh/uv/) (instalador de Python)
 - [Node.js](https://nodejs.org/) o [Bun](https://bun.sh/)
-- `swiftc` (incluido en las Command Line Tools de macOS: `xcode-select --install`)
+- `swiftc` (en macOS, incluido en las Command Line Tools: `xcode-select --install`)
 
-### 1. Backend (FastAPI + PyMuPDF + Edge-TTS)
+### Levantar y detener en desarrollo
 ```bash
-cd backend
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-uv pip install -e ".[dev]"
-python -m letha.api
+./start.sh
 ```
-El servidor backend escuchará en `http://127.0.0.1:47830` con documentación interactiva en `/docs`.
-
-### 2. Frontend (Next.js + Tailwind CSS)
-En otra pestaña:
+Y para detener ambos servicios:
 ```bash
-cd frontend
-bun install   # o npm install
-bun dev       # o npm run dev
+./stop.sh
 ```
-Abre `http://localhost:3000` en tu navegador.
 
-### 3. Compilar Release para Distribución
-Para generar el paquete empaquetado (Next.js compilado + ventana Swift + wheel de Python):
+### Compilar Release para Distribución
+Para generar el paquete multiplataforma empaquetado (Next.js compilado + ventana Swift + wheel de Python):
 ```bash
 ./scripts/build-release.sh
 ```
-El archivo distribuible quedará en `dist/letha-<versión>-py3-none-macosx_12_0_arm64.whl`.
+El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows).
 
 ---
 

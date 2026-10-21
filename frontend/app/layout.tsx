@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { KeepAlive } from "@/components/KeepAlive";
 
 export const metadata: Metadata = {
   title: "Letha — Lector y Audiolibro Sincronizado",
@@ -14,6 +15,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="min-h-screen transition-colors duration-200">
+        <KeepAlive />
         {children}
       </body>
     </html>
