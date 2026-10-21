@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -16,8 +17,8 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, sta
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from letha import database
-from letha.config import AUDIO_DIR, BOOKS_DIR, COVERS_DIR, DEFAULT_SPEED, DEFAULT_VOICE
+from letha import config, database
+from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import (
     BookDetail,
     BookSummary,
@@ -31,6 +32,7 @@ from letha.services import tts as tts_service
 
 _required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
 _active_jobs: int = 0
+_VOICE_RE = re.compile(r"^[a-zA-Z0-9_-]{3,80}$")
 
 
 def set_token(token: Optional[str]) -> None:
@@ -44,14 +46,21 @@ def busy() -> bool:
     return _active_jobs > 0
 
 
+def _validate_voice_name(voice: str) -> str:
+    """Valida que el nombre de voz tenga un formato seguro antes de usarlo en nombres de archivo."""
+    if not _VOICE_RE.fullmatch(voice):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nombre de voz inválido.",
+        )
+    return voice
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
     yield
 
-
-# Asegurar que las tablas existan incluso si la app se monta como sub-aplicación ASGI
-database.init_db()
 
 app = FastAPI(title="Letha API", version="0.1.0", lifespan=lifespan)
 
@@ -74,8 +83,8 @@ async def verify_token_middleware(request: Request, call_next):
         path = request.url.path
         if path.startswith("/api/") and path != "/api/health":
             header_token = request.headers.get("X-Letha-Token")
-            query_token = request.query_params.get("token")
-            if header_token != _required_token and query_token != _required_token:
+            cookie_token = request.cookies.get("letha_token")
+            if header_token != _required_token and cookie_token != _required_token:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Token de sesión inválido o ausente."},
@@ -97,8 +106,9 @@ async def get_voices():
 @app.get("/api/voices/preview")
 async def preview_voice(voice: str = DEFAULT_VOICE):
     global _active_jobs
-    preview_file = AUDIO_DIR / f"preview_{voice}.mp3"
-    preview_align = AUDIO_DIR / f"preview_{voice}.json"
+    voice = _validate_voice_name(voice)
+    preview_file = config.AUDIO_DIR / f"preview_{voice}.mp3"
+    preview_align = config.AUDIO_DIR / f"preview_{voice}.json"
     if not preview_file.exists():
         persona = tts_service._extract_persona_name(voice)
         sample_text = (
@@ -140,15 +150,17 @@ def upload_book(
             detail="Solo se admiten archivos PDF.",
         )
 
+    chosen_voice = _validate_voice_name(voice) if voice else DEFAULT_VOICE
+
     book_id = uuid.uuid4().hex[:12]
-    saved_pdf_path = BOOKS_DIR / f"{book_id}.pdf"
+    saved_pdf_path = config.BOOKS_DIR / f"{book_id}.pdf"
 
     with open(saved_pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
         book_info, chapters_data = pdf_service.extract_pdf_data(
-            saved_pdf_path, COVERS_DIR
+            saved_pdf_path, config.COVERS_DIR
         )
     except Exception as e:
         if saved_pdf_path.exists():
@@ -158,13 +170,22 @@ def upload_book(
             detail=f"Error al procesar el PDF: {str(e)}",
         )
 
+    if not chapters_data:
+        if saved_pdf_path.exists():
+            saved_pdf_path.unlink()
+        cover_file = book_info.get("cover_path")
+        if cover_file and Path(cover_file).exists():
+            Path(cover_file).unlink()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El PDF no contiene texto extraíble (parece ser un documento escaneado).",
+        )
+
     orig_name = Path(file.filename or "Libro").stem
     meta_title = book_info.get("title")
     title = orig_name
     if meta_title and meta_title != book_id and meta_title.lower() != "untitled":
         title = meta_title
-
-    chosen_voice = voice if voice else DEFAULT_VOICE
 
     database.insert_book(
         book_id=book_id,
@@ -220,7 +241,6 @@ async def synthesize_chapter(
     book_id: str,
     chapter_idx: int,
     voice: Optional[str] = None,
-    speed: Optional[float] = None,
 ):
     global _active_jobs
     book = database.get_book(book_id)
@@ -231,7 +251,7 @@ async def synthesize_chapter(
     if not chapter:
         raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
 
-    target_voice = voice or book.voice or DEFAULT_VOICE
+    target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
 
     # Siempre sintetizamos a velocidad base 1.0x; el cambio de velocidad se aplica
     # mediante playbackRate en el reproductor HTML5 para evitar duplicar el factor
@@ -239,8 +259,8 @@ async def synthesize_chapter(
     audio_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.mp3"
     alignment_filename = f"{book_id}_c{chapter_idx}_{target_voice}_1.00.json"
 
-    audio_path = AUDIO_DIR / audio_filename
-    alignment_path = AUDIO_DIR / alignment_filename
+    audio_path = config.AUDIO_DIR / audio_filename
+    alignment_path = config.AUDIO_DIR / alignment_filename
 
     if audio_path.exists() and alignment_path.exists():
         with open(alignment_path, "r", encoding="utf-8") as f:
@@ -319,7 +339,8 @@ def update_settings(book_id: str, payload: UpdateBookSettingsRequest):
     book = database.get_book(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
-    database.update_book_settings(book_id, voice=payload.voice, speed=payload.speed)
+    validated_voice = _validate_voice_name(payload.voice) if payload.voice is not None else None
+    database.update_book_settings(book_id, voice=validated_voice, speed=payload.speed)
     return {"status": "ok"}
 
 
@@ -335,7 +356,7 @@ def delete_book(book_id: str):
             if p.exists():
                 p.unlink()
 
-    for audio_file in AUDIO_DIR.glob(f"{book_id}_*"):
+    for audio_file in config.AUDIO_DIR.glob(f"{book_id}_*"):
         try:
             audio_file.unlink()
         except OSError:

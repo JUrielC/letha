@@ -27,7 +27,6 @@ import {
   SentenceItem,
   VoiceItem,
   getBaseUrl,
-  withTokenUrl,
 } from "@/lib/api";
 
 type Theme = "light" | "sepia" | "dark";
@@ -40,6 +39,7 @@ function ReaderContent() {
   // Estados de datos
   const [book, setBook] = useState<BookDetail | null>(null);
   const [chapter, setChapter] = useState<ChapterDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
@@ -47,7 +47,6 @@ function ReaderContent() {
 
   // Estados de reproducción
   const [isPlaying, setIsPlaying] = useState(false);
-  const [autoContinue, setAutoContinue] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeSentenceIdx, setActiveSentenceIdx] = useState<number>(-1);
@@ -61,9 +60,10 @@ function ReaderContent() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
-  const pendingSentenceIdxRef = useRef<number | null>(null);
+  const pendingRestoreRef = useRef<{ chapterIdx: number; sentenceIdx: number } | null>(null);
   const pendingSeekTimeRef = useRef<number | null>(null);
   const isInitialLoadRef = useRef<boolean>(true);
+  const autoPlayNextRef = useRef<boolean>(false);
 
   // Cargar preferencias guardadas y tema
   useEffect(() => {
@@ -94,17 +94,38 @@ function ReaderContent() {
   // Cargar libro inicial
   useEffect(() => {
     if (!bookId) return;
+    let ignore = false;
     isInitialLoadRef.current = true;
+    setLoadError(null);
+
     api
       .getBook(bookId)
       .then((b) => {
+        if (ignore) return;
         setBook(b);
-        pendingSentenceIdxRef.current = b.current_sentence_idx || 0;
-        setCurrentChapterIdx(b.current_chapter_idx ?? 0);
+        if (b.total_chapters === 0) {
+          setLoadError(
+            "Este documento no contiene texto extraíble (parece ser un PDF escaneado)."
+          );
+          return;
+        }
+        const targetChapter = b.current_chapter_idx ?? 0;
+        pendingRestoreRef.current = {
+          chapterIdx: targetChapter,
+          sentenceIdx: b.current_sentence_idx || 0,
+        };
+        setCurrentChapterIdx(targetChapter);
         if (b.voice) setSelectedVoice(b.voice);
         if (b.speed) setPlaybackSpeed(b.speed);
       })
-      .catch(console.error);
+      .catch((err: any) => {
+        if (ignore) return;
+        setLoadError(err.message || "No se pudo cargar el libro.");
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [bookId]);
 
   // Precarga en segundo plano de la siguiente página para transición instantánea
@@ -116,15 +137,22 @@ function ReaderContent() {
   // Cargar capítulo cuando cambie currentChapterIdx (solo después de cargar el libro)
   useEffect(() => {
     if (!bookId || currentChapterIdx === null) return;
+    let ignore = false;
     const chapterIdx = currentChapterIdx;
+
+    const shouldAutoPlay = autoPlayNextRef.current;
+    autoPlayNextRef.current = false;
 
     setIsPlaying(false);
     setCurrentTime(0);
     pendingSeekTimeRef.current = null;
+    setLoadError(null);
 
-    const restoredSentence =
-      pendingSentenceIdxRef.current !== null ? pendingSentenceIdxRef.current : -1;
-    pendingSentenceIdxRef.current = null;
+    let restoredSentence = -1;
+    if (pendingRestoreRef.current?.chapterIdx === chapterIdx) {
+      restoredSentence = pendingRestoreRef.current.sentenceIdx;
+      pendingRestoreRef.current = null;
+    }
 
     setActiveSentenceIdx(restoredSentence >= 0 ? restoredSentence : -1);
 
@@ -137,6 +165,7 @@ function ReaderContent() {
     api
       .getChapter(bookId, chapterIdx)
       .then((c) => {
+        if (ignore) return;
         setChapter(c);
 
         if (restoredSentence > 0 && restoredSentence < c.sentences.length) {
@@ -146,6 +175,7 @@ function ReaderContent() {
             setCurrentTime(targetSentence.start);
           }
           setTimeout(() => {
+            if (ignore) return;
             sentenceRefs.current[restoredSentence]?.scrollIntoView({
               behavior: "smooth",
               block: "center",
@@ -156,12 +186,11 @@ function ReaderContent() {
         if (c.has_audio) {
           const base = getBaseUrl();
           setAudioUrl(
-            withTokenUrl(
-              `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?t=${Date.now()}`
-            )
+            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?t=${Date.now()}`
           );
-          if (autoContinue) {
+          if (shouldAutoPlay) {
             setTimeout(() => {
+              if (ignore) return;
               if (audioRef.current) {
                 audioRef.current.play().catch(console.error);
                 setIsPlaying(true);
@@ -171,25 +200,27 @@ function ReaderContent() {
           }
         } else {
           setAudioUrl(null);
-          if (autoContinue) {
+          if (shouldAutoPlay) {
             // Sintetizar automáticamente al pasar de página en reproducción continua
             setIsSynthesizing(true);
             api
               .synthesizeChapter(bookId, chapterIdx, selectedVoice)
               .then((res) => {
+                if (ignore) return;
                 setChapter((prev) =>
-                  prev
+                  prev && prev.idx === chapterIdx
                     ? {
                         ...prev,
                         has_audio: true,
                         duration_seconds: res.duration,
                         sentences: res.sentences,
                       }
-                    : null
+                    : prev
                 );
                 const base = getBaseUrl();
-                setAudioUrl(withTokenUrl(`${base}${res.audio_url}?t=${Date.now()}`));
+                setAudioUrl(`${base}${res.audio_url}?t=${Date.now()}`);
                 setTimeout(() => {
+                  if (ignore) return;
                   if (audioRef.current) {
                     audioRef.current.play().catch(console.error);
                     setIsPlaying(true);
@@ -198,16 +229,37 @@ function ReaderContent() {
                 prefetchNextChapter(chapterIdx + 1);
               })
               .catch(console.error)
-              .finally(() => setIsSynthesizing(false));
+              .finally(() => {
+                if (!ignore) setIsSynthesizing(false);
+              });
           }
         }
       })
-      .catch(console.error);
+      .catch((err: any) => {
+        if (ignore) return;
+        setLoadError(err.message || "No se pudo cargar este capítulo.");
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [bookId, currentChapterIdx]);
 
   // Sincronización Karaoke: Detectar oración activa según currentTime
   useEffect(() => {
-    if (!chapter?.sentences || chapter.sentences.length === 0 || !isPlaying) return;
+    if (
+      !chapter?.sentences ||
+      chapter.sentences.length === 0 ||
+      currentChapterIdx === null ||
+      chapter.idx !== currentChapterIdx ||
+      pendingSeekTimeRef.current !== null
+    ) {
+      return;
+    }
+    // Evitar que currentTime=0 al montar en pausa pise la oración restaurada
+    if (!isPlaying && currentTime === 0 && activeSentenceIdx > 0) {
+      return;
+    }
 
     const idx = chapter.sentences.findIndex(
       (s) =>
@@ -219,7 +271,7 @@ function ReaderContent() {
 
     if (idx !== -1 && idx !== activeSentenceIdx) {
       setActiveSentenceIdx(idx);
-      if (bookId && currentChapterIdx !== null) {
+      if (bookId) {
         api.updateProgress(bookId, currentChapterIdx, idx).catch(console.error);
       }
 
@@ -234,28 +286,29 @@ function ReaderContent() {
   // Generar o re-generar audio para el capítulo
   const handleSynthesize = async () => {
     if (!chapter || !bookId || currentChapterIdx === null) return;
+    const targetChapterIdx = currentChapterIdx;
     setIsSynthesizing(true);
     try {
       const res = await api.synthesizeChapter(
         bookId,
-        currentChapterIdx,
+        targetChapterIdx,
         selectedVoice
       );
 
       // Actualizar datos del capítulo con los timestamps generados
       setChapter((prev) =>
-        prev
+        prev && prev.idx === targetChapterIdx
           ? {
               ...prev,
               has_audio: true,
               duration_seconds: res.duration,
               sentences: res.sentences,
             }
-          : null
+          : prev
       );
 
       const base = getBaseUrl();
-      const newUrl = withTokenUrl(`${base}${res.audio_url}?t=${Date.now()}`);
+      const newUrl = `${base}${res.audio_url}?t=${Date.now()}`;
       setAudioUrl(newUrl);
 
       // Comenzar reproducción automáticamente y precargar la siguiente página
@@ -265,7 +318,7 @@ function ReaderContent() {
           setIsPlaying(true);
         }
       }, 200);
-      prefetchNextChapter(currentChapterIdx + 1);
+      prefetchNextChapter(targetChapterIdx + 1);
     } catch (err: any) {
       alert(`Error al generar audio: ${err.message}`);
     } finally {
@@ -310,10 +363,12 @@ function ReaderContent() {
 
   const seekRelative = (seconds: number) => {
     if (!audioRef.current) return;
-    audioRef.current.currentTime = Math.max(
+    const nextTime = Math.max(
       0,
       Math.min(duration, audioRef.current.currentTime + seconds)
     );
+    audioRef.current.currentTime = nextTime;
+    setCurrentTime(nextTime);
   };
 
   const handleVoiceChange = async (newVoice: string) => {
@@ -325,6 +380,22 @@ function ReaderContent() {
     setAudioUrl(null);
     if (bookId) {
       await api.updateSettings(bookId, newVoice, playbackSpeed).catch(console.error);
+      const updatedBook = await api.getBook(bookId).catch(() => null);
+      if (updatedBook) setBook(updatedBook);
+      if (currentChapterIdx !== null) {
+        const updatedChap = await api
+          .getChapter(bookId, currentChapterIdx)
+          .catch(() => null);
+        if (updatedChap) {
+          setChapter(updatedChap);
+          if (updatedChap.has_audio) {
+            const base = getBaseUrl();
+            setAudioUrl(
+              `${base}/api/books/${bookId}/chapters/${currentChapterIdx}/audio?t=${Date.now()}`
+            );
+          }
+        }
+      }
     }
   };
 
@@ -384,7 +455,7 @@ function ReaderContent() {
           onEnded={() => {
             setIsPlaying(false);
             if (book && currentChapterIdx !== null && currentChapterIdx + 1 < book.total_chapters) {
-              setAutoContinue(true);
+              autoPlayNextRef.current = true;
               setCurrentChapterIdx(currentChapterIdx + 1);
             }
           }}
@@ -496,7 +567,17 @@ function ReaderContent() {
 
       {/* Área de lectura del texto */}
       <main className="flex-1 w-full mx-auto px-6 sm:px-12 py-12 flex flex-col items-center">
-        {!chapter ? (
+        {loadError ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center max-w-md gap-4">
+            <p className="text-sm font-medium text-red-500">{loadError}</p>
+            <Link
+              href="/"
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition"
+            >
+              Volver a la biblioteca
+            </Link>
+          </div>
+        ) : !chapter ? (
           <div className="flex flex-col items-center justify-center py-24 text-zinc-400 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
             <span className="text-sm">Cargando capítulo...</span>

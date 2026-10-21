@@ -84,13 +84,6 @@ export function getToken(): string {
   return "";
 }
 
-export function withTokenUrl(url: string): string {
-  const token = getToken();
-  if (!token) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}token=${encodeURIComponent(token)}`;
-}
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getBaseUrl();
   const url = `${base}${path}`;
@@ -118,7 +111,7 @@ export const api = {
   getVoices: () => request<VoiceItem[]>("/api/voices"),
 
   getVoicePreviewUrl: (voice: string) =>
-    withTokenUrl(`${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`),
+    `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,
 
   uploadBook: async (file: File, voice?: string): Promise<BookDetail> => {
     const base = getBaseUrl();

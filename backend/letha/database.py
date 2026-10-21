@@ -5,16 +5,18 @@ Base de datos SQLite local para gestionar la biblioteca, capítulos y progreso d
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
-from letha.config import DB_PATH, DEFAULT_SPEED, DEFAULT_VOICE
+from letha import config
+from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import BookDetail, BookSummary, ChapterDetail, ChapterSummary, SentenceItem
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -60,6 +62,15 @@ def init_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters (book_id, idx)")
+        # Limpiar audios antiguos generados a velocidades distintas de 1.00x
+        # para evitar que suenen acelerados al combinarse con playbackRate.
+        conn.execute(
+            """
+            UPDATE chapters
+            SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
+            WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_1.00.mp3'
+            """
+        )
         conn.commit()
 
 
@@ -233,6 +244,57 @@ def update_book_settings(
     with get_connection() as conn:
         if voice is not None:
             conn.execute("UPDATE books SET voice = ? WHERE id = ?", (voice, book_id))
+            # Sincronizar el estado de audio de cada capítulo con la nueva voz seleccionada:
+            # si ya existe el caché 1.00x para esta voz en disco, vincularlo; si no, limpiar audio_path
+            # para que no se reproduzca el audio de la voz anterior.
+            rows = conn.execute(
+                "SELECT idx, sentences_json FROM chapters WHERE book_id = ?", (book_id,)
+            ).fetchall()
+            for row in rows:
+                c_idx = row["idx"]
+                target_audio = config.AUDIO_DIR / f"{book_id}_c{c_idx}_{voice}_1.00.mp3"
+                target_align = config.AUDIO_DIR / f"{book_id}_c{c_idx}_{voice}_1.00.json"
+                if target_audio.exists() and target_align.exists():
+                    try:
+                        sentences_data = json.loads(target_align.read_text(encoding="utf-8"))
+                        duration = sentences_data[-1]["end"] if sentences_data else 0.0
+                        conn.execute(
+                            """
+                            UPDATE chapters
+                            SET audio_path = ?, alignment_path = ?, duration_seconds = ?, sentences_json = ?
+                            WHERE book_id = ? AND idx = ?
+                            """,
+                            (
+                                str(target_audio),
+                                str(target_align),
+                                duration,
+                                json.dumps(sentences_data),
+                                book_id,
+                                c_idx,
+                            ),
+                        )
+                        continue
+                    except (OSError, ValueError, KeyError):
+                        pass
+
+                try:
+                    raw_sentences = json.loads(row["sentences_json"])
+                    reset_sentences = [
+                        {"index": s["index"], "text": s["text"], "start": None, "end": None}
+                        for s in raw_sentences
+                    ]
+                    reset_json = json.dumps(reset_sentences)
+                except (ValueError, KeyError, TypeError):
+                    reset_json = row["sentences_json"]
+
+                conn.execute(
+                    """
+                    UPDATE chapters
+                    SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL, sentences_json = ?
+                    WHERE book_id = ? AND idx = ?
+                    """,
+                    (reset_json, book_id, c_idx),
+                )
         if speed is not None:
             conn.execute("UPDATE books SET speed = ? WHERE id = ?", (speed, book_id))
         conn.commit()

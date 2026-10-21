@@ -68,14 +68,23 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
 
     def render_html_file(file_path: Path) -> HTMLResponse:
         if not file_path.is_file():
-            return HTMLResponse(
+            res = HTMLResponse(
                 "<h1>Letha Backend Running</h1>", headers={"Cache-Control": "no-store"}
             )
-        content = file_path.read_text(encoding="utf-8")
-        injected = content.replace(
-            "<head>", f"<head><script>window.__LETHA__ = {config};</script>", 1
+        else:
+            content = file_path.read_text(encoding="utf-8")
+            injected = content.replace(
+                "<head>", f"<head><script>window.__LETHA__ = {config};</script>", 1
+            )
+            res = HTMLResponse(injected, headers={"Cache-Control": "no-store"})
+        res.set_cookie(
+            key="letha_token",
+            value=token,
+            httponly=True,
+            samesite="strict",
+            path="/",
         )
-        return HTMLResponse(injected, headers={"Cache-Control": "no-store"})
+        return res
 
     async def home(request):
         _touch()
@@ -110,7 +119,6 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
 
     return Starlette(
         routes=routes,
-        lifespan=api.lifespan,
         middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=LOCAL_HOSTS)],
     )
 
@@ -151,7 +159,8 @@ def _watch_parent(server, parent_pid: int, poll: float = 2.0) -> None:
 
 def _bind(port: int) -> socket.socket:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if sys.platform != "win32":
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.bind(("127.0.0.1", port))
     except OSError:
