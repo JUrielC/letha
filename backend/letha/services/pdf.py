@@ -116,80 +116,52 @@ def extract_pdf_data(
         pix.save(str(full_cover_path))
         cover_path = str(full_cover_path)
 
-    # Intentar obtener índice de contenidos (TOC)
+    # Mapa opcional de títulos desde el índice (TOC) por página (0-indexed)
     toc = doc.get_toc()  # [[lvl, title, page], ...]
+    page_toc_titles: Dict[int, str] = {}
+    for item in toc:
+        if len(item) >= 3 and 1 <= item[2] <= total_pages:
+            p_idx = item[2] - 1
+            t = item[1].strip()
+            if t and p_idx not in page_toc_titles:
+                page_toc_titles[p_idx] = t
+
     chapters_data: List[Dict[str, Any]] = []
+    current_section_title = ""
+    chunk_idx = 0
 
-    # Filtrar TOC a nivel 1 o 2
-    valid_toc_entries = [
-        item for item in toc if len(item) >= 3 and 1 <= item[2] <= total_pages
-    ]
+    # Dividir página por página para que la síntesis de voz sea casi instantánea (1-2s por página)
+    for p_num in range(total_pages):
+        if p_num in page_toc_titles:
+            current_section_title = page_toc_titles[p_num]
 
-    if len(valid_toc_entries) >= 2:
-        # Construir capítulos a partir del TOC
-        for i, entry in enumerate(valid_toc_entries):
-            chap_title = entry[1].strip() or f"Capítulo {i+1}"
-            start_p = entry[2] - 1  # 0-indexed
-            end_p = (
-                valid_toc_entries[i + 1][2] - 2
-                if i + 1 < len(valid_toc_entries)
-                else total_pages - 1
-            )
-            if end_p < start_p:
-                end_p = start_p
+        p_text = clean_page_text(doc[p_num])
+        if not p_text:
+            continue
 
-            # Extraer texto de ese rango de páginas
-            chapter_text_parts = []
-            for p_num in range(start_p, min(end_p + 1, total_pages)):
-                p_text = clean_page_text(doc[p_num])
-                if p_text:
-                    chapter_text_parts.append(p_text)
+        sentences = split_sentences(p_text)
+        if not sentences:
+            continue
 
-            chapter_text = "\n\n".join(chapter_text_parts).strip()
-            sentences = split_sentences(chapter_text)
+        if current_section_title:
+            chap_title = f"Pág. {p_num + 1} — {current_section_title}"
+        else:
+            chap_title = f"Página {p_num + 1}"
 
-            chapters_data.append(
-                {
-                    "idx": i,
-                    "title": chap_title,
-                    "start_page": start_p + 1,
-                    "end_page": end_p + 1,
-                    "text_content": chapter_text,
-                    "sentences": [
-                        {"index": s_idx, "text": s_txt, "start": None, "end": None}
-                        for s_idx, s_txt in enumerate(sentences)
-                    ],
-                }
-            )
-    else:
-        # Si no hay TOC válido, dividir en partes manejables (~10 páginas por capítulo)
-        pages_per_chunk = 10
-        chunk_idx = 0
-        for start_p in range(0, total_pages, pages_per_chunk):
-            end_p = min(start_p + pages_per_chunk - 1, total_pages - 1)
-            chapter_text_parts = []
-            for p_num in range(start_p, end_p + 1):
-                p_text = clean_page_text(doc[p_num])
-                if p_text:
-                    chapter_text_parts.append(p_text)
-
-            chapter_text = "\n\n".join(chapter_text_parts).strip()
-            sentences = split_sentences(chapter_text)
-
-            chapters_data.append(
-                {
-                    "idx": chunk_idx,
-                    "title": f"Parte {chunk_idx + 1} (Págs. {start_p + 1}–{end_p + 1})",
-                    "start_page": start_p + 1,
-                    "end_page": end_p + 1,
-                    "text_content": chapter_text,
-                    "sentences": [
-                        {"index": s_idx, "text": s_txt, "start": None, "end": None}
-                        for s_idx, s_txt in enumerate(sentences)
-                    ],
-                }
-            )
-            chunk_idx += 1
+        chapters_data.append(
+            {
+                "idx": chunk_idx,
+                "title": chap_title,
+                "start_page": p_num + 1,
+                "end_page": p_num + 1,
+                "text_content": p_text,
+                "sentences": [
+                    {"index": s_idx, "text": s_txt, "start": None, "end": None}
+                    for s_idx, s_txt in enumerate(sentences)
+                ],
+            }
+        )
+        chunk_idx += 1
 
     doc.close()
 

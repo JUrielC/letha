@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { BookSummary } from "@/lib/api";
+import { BookSummary, getBaseUrl } from "@/lib/api";
 import { BookOpen, Trash2 } from "lucide-react";
 
 interface BookCardProps {
@@ -15,13 +15,14 @@ export function BookCard({ book, onDelete }: BookCardProps) {
     book.total_chapters > 0
       ? Math.round(((book.current_chapter_idx + 1) / book.total_chapters) * 100)
       : 0;
+  const coverSrc = book.cover_url ? `${getBaseUrl()}${book.cover_url}` : null;
 
   return (
     <div className="group relative flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition">
       <Link href={`/reader?id=${book.id}`} className="block relative aspect-[3/4] bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-        {book.cover_url ? (
+        {coverSrc ? (
           <img
-            src={book.cover_url}
+            src={coverSrc}
             alt={book.title}
             className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
           />

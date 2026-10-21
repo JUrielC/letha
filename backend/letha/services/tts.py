@@ -1,15 +1,23 @@
 """
 Síntesis de voz y extracción de marcas de tiempo con edge-tts.
+Soporta síntesis paralela por fragmentos para que capítulos largos se generen en pocos segundos.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import edge_tts
 
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
+
+# edge-tts genera audio MP3 CBR a 24kHz 48kbps mono = 6000 bytes por segundo exactos
+BYTES_PER_SECOND = 6000.0
+MAX_CHUNK_CHARS = 450
+MAX_CONCURRENCY = 8
 
 
 async def list_available_voices() -> List[Dict[str, str]]:
@@ -33,7 +41,6 @@ async def list_available_voices() -> List[Dict[str, str]]:
             }
         )
 
-    # Ordenar: primero 'es-', luego 'en-', luego el resto alfabético
     def sort_key(item: Dict[str, str]):
         loc = item["locale"].lower()
         if loc.startswith("es-mx"):
@@ -56,6 +63,76 @@ def format_rate(speed: float) -> str:
     return f"{pct}%"
 
 
+def _split_text_into_chunks(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
+    """
+    Divide el texto en fragmentos de hasta `max_chars` caracteres respetando límites de oración.
+    """
+    raw_parts = re.split(r"(?<=[.!?…])\s+|\n+", text.strip())
+    chunks: List[str] = []
+    current: List[str] = []
+    current_len = 0
+
+    for part in raw_parts:
+        part = part.strip()
+        if not part:
+            continue
+        if current_len + len(part) + 1 > max_chars and current:
+            chunks.append(" ".join(current))
+            current = [part]
+            current_len = len(part)
+        else:
+            current.append(part)
+            current_len += len(part) + 1
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
+
+
+async def _synthesize_single_chunk(
+    chunk_text: str,
+    voice: str,
+    rate_str: str,
+    semaphore: asyncio.Semaphore,
+) -> Tuple[bytearray, List[Dict[str, Any]]]:
+    """
+    Sintetiza un fragmento individual con reintentos automáticos ante fallos de red.
+    """
+    async with semaphore:
+        last_err = None
+        for attempt in range(3):
+            try:
+                communicate = edge_tts.Communicate(chunk_text, voice, rate=rate_str)
+                audio_bytes = bytearray()
+                sentences: List[Dict[str, Any]] = []
+
+                async for chunk in communicate.stream():
+                    c_type = chunk.get("type")
+                    if c_type == "audio":
+                        audio_bytes.extend(chunk.get("data", b""))
+                    elif c_type == "SentenceBoundary":
+                        raw_offset = chunk.get("offset", 0)
+                        raw_duration = chunk.get("duration", 0)
+                        sentence_text = chunk.get("text", "").strip()
+
+                        start_sec = raw_offset / 10_000_000.0
+                        end_sec = (raw_offset + raw_duration) / 10_000_000.0
+
+                        sentences.append(
+                            {
+                                "text": sentence_text,
+                                "start": start_sec,
+                                "end": end_sec,
+                            }
+                        )
+                return audio_bytes, sentences
+            except Exception as e:
+                last_err = e
+                await asyncio.sleep(0.4 * (attempt + 1))
+        raise RuntimeError(f"Error sintetizando fragmento tras 3 intentos: {last_err}")
+
+
 async def synthesize_text_to_audio(
     text: str,
     voice: str = DEFAULT_VOICE,
@@ -64,50 +141,51 @@ async def synthesize_text_to_audio(
     output_alignment_path: Path = None,
 ) -> Tuple[float, List[Dict[str, Any]]]:
     """
-    Sintetiza texto a archivo MP3 y captura los límites de cada oración con sus tiempos de inicio y fin.
+    Sintetiza texto a archivo MP3 en paralelo por fragmentos y unifica los tiempos de cada oración.
     """
     if not text.strip():
         return 0.0, []
 
     rate_str = format_rate(speed)
-    communicate = edge_tts.Communicate(text, voice, rate=rate_str)
+    chunks = _split_text_into_chunks(text, MAX_CHUNK_CHARS)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
+    tasks = [
+        _synthesize_single_chunk(chunk_text, voice, rate_str, semaphore)
+        for chunk_text in chunks
+    ]
+    results = await asyncio.gather(*tasks)
+
+    total_audio_bytes = bytearray()
     sentences_alignment: List[Dict[str, Any]] = []
-    audio_bytes = bytearray()
+    time_offset = 0.0
 
-    async for chunk in communicate.stream():
-        c_type = chunk.get("type")
-        if c_type == "audio":
-            audio_bytes.extend(chunk.get("data", b""))
-        elif c_type == "SentenceBoundary":
-            # offset y duration vienen en unidades de 100ns (1 segundo = 10,000,000 unidades)
-            raw_offset = chunk.get("offset", 0)
-            raw_duration = chunk.get("duration", 0)
-            sentence_text = chunk.get("text", "").strip()
-
-            start_sec = round(raw_offset / 10_000_000.0, 3)
-            end_sec = round((raw_offset + raw_duration) / 10_000_000.0, 3)
-
+    for chunk_audio, chunk_sentences in results:
+        for s in chunk_sentences:
             sentences_alignment.append(
                 {
                     "index": len(sentences_alignment),
-                    "text": sentence_text,
-                    "start": start_sec,
-                    "end": end_sec,
+                    "text": s["text"],
+                    "start": round(time_offset + s["start"], 3),
+                    "end": round(time_offset + s["end"], 3),
                 }
             )
+        total_audio_bytes.extend(chunk_audio)
+        chunk_duration = len(chunk_audio) / BYTES_PER_SECOND
+        time_offset += chunk_duration
 
-    # Escribir el audio MP3
-    output_audio_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_audio_path, "wb") as f:
-        f.write(audio_bytes)
+    if output_audio_path is not None:
+        output_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_audio_path, "wb") as f:
+            f.write(total_audio_bytes)
 
-    # Si hay oraciones sincronizadas, la duración total es el final de la última oración
-    total_duration = sentences_alignment[-1]["end"] if sentences_alignment else 0.0
+    total_duration = round(time_offset, 3)
+    if sentences_alignment and sentences_alignment[-1]["end"] > total_duration:
+        total_duration = sentences_alignment[-1]["end"]
 
-    # Guardar archivo de alineación JSON
-    output_alignment_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_alignment_path, "w", encoding="utf-8") as f:
-        json.dump(sentences_alignment, f, ensure_ascii=False, indent=2)
+    if output_alignment_path is not None:
+        output_alignment_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_alignment_path, "w", encoding="utf-8") as f:
+            json.dump(sentences_alignment, f, ensure_ascii=False, indent=2)
 
     return total_duration, sentences_alignment
