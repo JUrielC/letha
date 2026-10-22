@@ -66,6 +66,11 @@ def get_audio_cache_tag() -> str:
 PRIMARY_LOCALES = {"es": "es-MX", "en": "en-US", "fr": "fr-FR", "it": "it-IT", "pt": "pt-BR"}
 SUPPORTED_LANGUAGES = tuple(PRIMARY_LOCALES)
 
+
+def voice_language(voice: str) -> str:
+    return voice.split("-")[0].lower()
+
+
 LOCALE_LABELS = {
     "es-MX": "Español (México)",
     "es-ES": "Español (España)",
@@ -130,7 +135,7 @@ async def list_available_voices() -> List[Dict[str, str]]:
     for v in voices:
         short_name = v.get("ShortName", "")
         locale = v.get("Locale", "")
-        if locale.split("-")[0].lower() not in SUPPORTED_LANGUAGES:
+        if voice_language(locale) not in SUPPORTED_LANGUAGES:
             continue
         gender = v.get("Gender", "")
         persona = _extract_persona_name(short_name)
@@ -149,7 +154,7 @@ async def list_available_voices() -> List[Dict[str, str]]:
 
     def sort_key(item: Dict[str, str]):
         locale = item["locale"]
-        language = locale.split("-")[0].lower()
+        language = voice_language(locale)
         return (
             SUPPORTED_LANGUAGES.index(language),
             locale != PRIMARY_LOCALES[language],

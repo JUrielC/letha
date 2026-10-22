@@ -569,6 +569,13 @@ function ReaderContent() {
     setCurrentTime(nextTime);
   };
 
+  const bookVoices = book
+    ? voices.filter(
+        (v) =>
+          v.locale.toLowerCase().startsWith(`${book.language}-`) || v.short_name === selectedVoice
+      )
+    : [];
+
   const handleVoiceChange = async (newVoice: string) => {
     if (newVoice === selectedVoice) return;
     if (audioRef.current) {
@@ -724,7 +731,7 @@ function ReaderContent() {
               className="max-w-[160px] sm:max-w-[240px] text-xs font-medium bg-white/40 dark:bg-white/[0.05] border border-slate-300/60 dark:border-white/10 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer truncate"
               title="Cambiar persona que narra"
             >
-              {voices.map((v) => (
+              {bookVoices.map((v) => (
                 <option
                   key={v.short_name}
                   value={v.short_name}

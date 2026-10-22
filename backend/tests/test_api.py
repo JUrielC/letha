@@ -4,11 +4,21 @@ Pruebas de la API y del servidor empaquetado de Letha con TestClient.
 
 import io
 import json
+import sqlite3
 from fastapi.testclient import TestClient
 import pymupdf
 
 from letha import api, config, database
 from letha.app import build_app
+
+
+ENGLISH_TEXT = (
+    "The morning Julian arrived in Seattle, the sky was a strange color, somewhere between gray and gold. "
+    "He had traveled for almost twelve hours, carrying an old backpack and three books he had no intention "
+    "of returning. Who would be waiting for him at the station? No one, of course: his aunt had written "
+    "that she would be busy until half past six. He had read the letter twice, though he still was not "
+    "sure where she lived, and there was nothing to do but walk."
+)
 
 
 def create_sample_pdf() -> bytes:
@@ -199,6 +209,130 @@ def test_voice_preview_speaks_the_voice_language(monkeypatch):
     assert spoken["pt-BR-FranciscaNeural"].startswith("Olá, eu sou Francisca.")
     assert spoken["en-US-AvaNeural"].startswith("Hello, I am Ava.")
     assert spoken["es-MX-DaliaNeural"].startswith("Hola, soy Dalia.")
+
+
+def test_book_language_is_saved_and_restricts_voice_changes():
+    """Verifica que el idioma elegido al importar se guarde y limite el cambio de voz."""
+    database.init_db()
+    client = TestClient(api.app)
+
+    def upload(**form):
+        files = {"file": ("libro.pdf", io.BytesIO(create_sample_pdf()), "application/pdf")}
+        return client.post("/api/books/upload", files=files, data=form)
+
+    res = upload(voice="en-US-AvaNeural", language="en")
+    assert res.status_code == 200
+    book_id = res.json()["id"]
+    assert res.json()["language"] == "en"
+    assert client.get("/api/books").json()[0]["language"] == "en"
+
+    assert upload(voice="fr-FR-DeniseNeural").json()["language"] == "fr"
+    assert upload(voice="es-MX-DaliaNeural", language="en").status_code == 400
+    assert upload(voice="de-DE-KatjaNeural", language="de").status_code == 400
+    assert len(list(config.BOOKS_DIR.glob("*.pdf"))) == 2
+
+    res_other = client.put(f"/api/books/{book_id}/settings", json={"voice": "es-MX-DaliaNeural"})
+    assert res_other.status_code == 400
+    res_same = client.put(f"/api/books/{book_id}/settings", json={"voice": "en-GB-SoniaNeural"})
+    assert res_same.status_code == 200
+    assert client.get(f"/api/books/{book_id}").json()["voice"] == "en-GB-SoniaNeural"
+
+
+def test_existing_books_get_language_from_their_text():
+    """
+    Verifica que los libros de una base de datos anterior obtengan el idioma de su texto
+    (aunque su voz sea de otro idioma) y, si no hay texto, de su voz.
+    """
+    insert_book_sql = (
+        "INSERT INTO books (id, title, author, file_path, total_pages, total_chapters, created_at, last_read_at, voice) "
+        "VALUES (?, 'Libro', 'Autor', 'libro.pdf', 1, 1, 0, 0, ?)"
+    )
+    conn = sqlite3.connect(config.DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE books (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL,
+            file_path TEXT NOT NULL, cover_path TEXT, total_pages INTEGER NOT NULL,
+            total_chapters INTEGER NOT NULL, created_at INTEGER NOT NULL,
+            last_read_at INTEGER NOT NULL, current_chapter_idx INTEGER DEFAULT 0,
+            current_sentence_idx INTEGER DEFAULT 0, voice TEXT NOT NULL, speed REAL DEFAULT 1.0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE chapters (
+            id TEXT PRIMARY KEY, book_id TEXT NOT NULL, idx INTEGER NOT NULL, title TEXT NOT NULL,
+            start_page INTEGER NOT NULL, end_page INTEGER NOT NULL, text_content TEXT NOT NULL,
+            sentences_json TEXT NOT NULL, audio_path TEXT, alignment_path TEXT, duration_seconds REAL
+        )
+        """
+    )
+    conn.execute(insert_book_sql, ("ingles_con_voz_es", "es-US-PalomaNeural"))
+    conn.execute(
+        "INSERT INTO chapters VALUES ('ingles_con_voz_es_c0', 'ingles_con_voz_es', 0, 'Uno', 1, 1, ?, '[]', NULL, NULL, NULL)",
+        (ENGLISH_TEXT,),
+    )
+    conn.execute(insert_book_sql, ("sin_texto", "it-IT-ElsaNeural"))
+    conn.commit()
+    conn.close()
+
+    database.init_db()
+    assert database.get_book("ingles_con_voz_es").language == "en"
+    assert database.get_book("sin_texto").language == "it"
+    assert {b.language for b in database.list_books()} == {"en", "it"}
+
+    # El lector reenvía la voz actual al cambiar la velocidad aunque sea de otro idioma
+    client = TestClient(api.app)
+    res_speed = client.put(
+        "/api/books/ingles_con_voz_es/settings",
+        json={"voice": "es-US-PalomaNeural", "speed": 1.25},
+    )
+    assert res_speed.status_code == 200
+    assert database.get_book("ingles_con_voz_es").speed == 1.25
+    res_other = client.put(
+        "/api/books/ingles_con_voz_es/settings", json={"voice": "es-MX-DaliaNeural"}
+    )
+    assert res_other.status_code == 400
+
+    # Un libro que una versión anterior guarde sin idioma también se completa al reiniciar
+    with database.get_connection() as conn:
+        conn.execute(insert_book_sql, ("version_anterior", "fr-FR-DeniseNeural"))
+    database.init_db()
+    assert database.get_book("version_anterior").language == "fr"
+    assert database.get_book("ingles_con_voz_es").language == "en"
+
+
+def test_detect_language():
+    from letha.services import pdf as pdf_service
+
+    assert pdf_service.detect_language(ENGLISH_TEXT) == "en"
+    assert pdf_service.detect_language(
+        "Rosario vivía en una casa angosta, pintada de azul, al final de una calle empedrada. "
+        "Tenía un patio con macetas de barro, un limonero torcido y una mesa de madera donde, según ella, "
+        "se resolvían todos los problemas de la familia. Julián llegó poco después de las siete y ya era "
+        "tarde. Después lo abrazó sin decir nada, pero él no entendió del todo hasta que ella le dijo que "
+        "los libros, como las plantas, no se empiezan: se siembran."
+    ) == "es"
+    assert pdf_service.detect_language(
+        "Le matin où Julien est arrivé à Lyon, le ciel avait une couleur étrange, entre le gris et l'or. "
+        "Il avait voyagé pendant presque douze heures, avec un vieux sac à dos et trois livres qu'il "
+        "n'avait aucune intention de rendre. Personne ne l'attendait à la gare : sa tante était occupée "
+        "et elle avait écrit que tout irait bien. Nous sommes dans une ville où les rues sont étroites."
+    ) == "fr"
+    assert pdf_service.detect_language(
+        "La mattina in cui Giulio arrivò a Torino, il cielo aveva un colore strano, tra il grigio e l'oro. "
+        "Aveva viaggiato per quasi dodici ore, con uno zaino vecchio e tre libri che non pensava di "
+        "restituire. Nessuno lo aspettava alla stazione: la zia gli aveva scritto che sarebbe stata "
+        "molto occupata. Questo era il suo primo giorno in città e anche lei era stanca, però felice."
+    ) == "it"
+    assert pdf_service.detect_language(
+        "Na manhã em que Júlio chegou a Lisboa, o céu tinha uma cor estranha, entre o cinza e o dourado. "
+        "Ele tinha viajado quase doze horas, com uma mochila velha e três livros que não pensava devolver. "
+        "Ninguém o esperava na estação: a tia já tinha escrito que estaria muito ocupada até as seis. "
+        "Então ele andou pela cidade, comprou um café e pensou que isso era o começo de algo novo."
+    ) == "pt"
+    assert pdf_service.detect_language("Hola.") is None
 
 
 def test_upload_read_voice_switch_and_legacy_audio_cleanup():

@@ -55,6 +55,7 @@ class BookSummary(BaseModel):
     current_chapter_idx: int = 0
     current_sentence_idx: int = 0
     voice: str
+    language: str
     speed: float
     created_at: int
     last_read_at: int

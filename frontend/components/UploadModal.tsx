@@ -122,7 +122,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
       }
-      await api.uploadBook(file, selectedVoice);
+      await api.uploadBook(file, selectedVoice, langFilter);
       setFile(null);
       onSuccess();
       onClose();

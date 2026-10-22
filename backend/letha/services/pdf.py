@@ -7,8 +7,47 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import pymupdf
+
+
+# Palabras frecuentes que solo aparecen en un idioma; las compartidas ("de", "que", "il"...) no distinguen.
+LANGUAGE_MARKERS = {
+    "en": {
+        "the", "and", "of", "to", "is", "was", "he", "she", "it", "that", "with", "for", "you",
+        "his", "her", "not", "had", "but", "at", "this", "they", "have", "be", "which", "from",
+        "what", "there", "were", "would", "been",
+    },
+    "es": {
+        "el", "los", "las", "y", "pero", "muy", "fue", "ella", "él", "sus", "también", "cuando",
+        "sin", "hasta", "eso", "había", "ya", "aquí", "entonces", "después", "dijo",
+    },
+    "fr": {
+        "les", "des", "et", "est", "du", "pas", "dans", "pour", "elle", "avec", "sur", "au", "aux",
+        "ce", "cette", "ont", "était", "sont", "nous", "vous", "je", "avait", "comme", "tout",
+    },
+    "it": {
+        "di", "che", "è", "gli", "della", "delle", "sono", "per", "nel", "nella", "alla", "anche",
+        "questo", "questa", "lei", "loro", "dei", "degli", "però", "aveva", "molto", "cosa",
+    },
+    "pt": {
+        "os", "das", "não", "em", "um", "uma", "com", "ao", "foi", "ele", "ela", "seu", "sua",
+        "muito", "também", "isso", "mas", "você", "então", "depois", "já", "até", "eu",
+    },
+}
+
+
+def detect_language(text: str) -> Optional[str]:
+    """Devuelve el idioma dominante del texto, o None si no es concluyente."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    scores = sorted(
+        ((sum(1 for w in words if w in markers), lang) for lang, markers in LANGUAGE_MARKERS.items()),
+        reverse=True,
+    )
+    (best_score, best_lang), (second_score, _) = scores[0], scores[1]
+    if best_score < 10 or best_score < 1.5 * second_score:
+        return None
+    return best_lang
 
 
 ABBREVS = [

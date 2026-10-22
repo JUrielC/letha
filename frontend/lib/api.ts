@@ -49,6 +49,7 @@ export interface BookSummary {
   current_chapter_idx: number;
   current_sentence_idx: number;
   voice: string;
+  language: string;
   speed: number;
   created_at: number;
   last_read_at: number;
@@ -143,13 +144,16 @@ export const api = {
   getVoicePreviewUrl: (voice: string) =>
     `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,
 
-  uploadBook: async (file: File, voice?: string): Promise<BookDetail> => {
+  uploadBook: async (file: File, voice?: string, language?: string): Promise<BookDetail> => {
     const base = getBaseUrl();
     const token = getToken();
     const formData = new FormData();
     formData.append("file", file);
     if (voice) {
       formData.append("voice", voice);
+    }
+    if (language) {
+      formData.append("language", language);
     }
 
     const headers: Record<string, string> = {};

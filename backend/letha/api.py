@@ -65,6 +65,14 @@ def _validate_voice_name(voice: str) -> str:
     return voice
 
 
+def _ensure_voice_matches_language(voice: str, language: str) -> None:
+    if tts_service.voice_language(voice) != language:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La voz elegida no corresponde al idioma del libro.",
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
@@ -153,7 +161,7 @@ async def preview_voice(voice: str = DEFAULT_VOICE):
     preview_align = config.AUDIO_DIR / f"preview_{voice}_{tts_service.AUDIO_CACHE_TAG}.json"
     if not preview_file.exists():
         persona = tts_service._extract_persona_name(voice)
-        template = _PREVIEW_TEXTS.get(voice.split("-")[0].lower(), _PREVIEW_TEXTS["es"])
+        template = _PREVIEW_TEXTS.get(tts_service.voice_language(voice), _PREVIEW_TEXTS["es"])
         sample_text = template.format(persona=persona)
         _active_jobs += 1
         try:
@@ -178,6 +186,7 @@ def get_books():
 def upload_book(
     file: UploadFile = File(...),
     voice: Optional[str] = Form(None),
+    language: Optional[str] = Form(None),
 ):
     """
     Definida como función síncrona (`def`) para que FastAPI la ejecute en su threadpool
@@ -190,6 +199,13 @@ def upload_book(
         )
 
     chosen_voice = _validate_voice_name(voice) if voice else DEFAULT_VOICE
+    chosen_language = (language or tts_service.voice_language(chosen_voice)).lower()
+    if chosen_language not in tts_service.SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idioma no soportado.",
+        )
+    _ensure_voice_matches_language(chosen_voice, chosen_language)
 
     book_id = uuid.uuid4().hex[:12]
     saved_pdf_path = config.BOOKS_DIR / f"{book_id}.pdf"
@@ -236,6 +252,7 @@ def upload_book(
         chapters_data=chapters_data,
         voice=chosen_voice,
         speed=DEFAULT_SPEED,
+        language=chosen_language,
     )
 
     detail = database.get_book(book_id)
@@ -488,6 +505,8 @@ def update_settings(book_id: str, payload: UpdateBookSettingsRequest):
     if not book:
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
     validated_voice = _validate_voice_name(payload.voice) if payload.voice is not None else None
+    if validated_voice is not None and validated_voice != book.voice:
+        _ensure_voice_matches_language(validated_voice, book.language)
     database.update_book_settings(book_id, voice=validated_voice, speed=payload.speed)
     return {"status": "ok"}
 

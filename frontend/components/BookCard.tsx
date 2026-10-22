@@ -36,6 +36,10 @@ export function BookCard({
     book.voice || "es-MX-DaliaNeural"
   );
   const [imgFailed, setImgFailed] = useState(false);
+  const bookVoices = voices.filter(
+    (v) =>
+      v.locale.toLowerCase().startsWith(`${book.language}-`) || v.short_name === selectedVoice
+  );
 
   const currentPage = Math.min(
     Math.max(1, book.current_chapter_idx + 1),
@@ -179,7 +183,7 @@ export function BookCard({
               style={{ borderColor: "var(--line-strong)" }}
               title="Cambiar la persona que narra este libro"
             >
-              {voices.map((v) => (
+              {bookVoices.map((v) => (
                 <option
                   key={v.short_name}
                   value={v.short_name}

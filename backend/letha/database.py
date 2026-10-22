@@ -41,10 +41,14 @@ def init_db():
                 current_chapter_idx INTEGER DEFAULT 0,
                 current_sentence_idx INTEGER DEFAULT 0,
                 voice TEXT NOT NULL,
-                speed REAL DEFAULT 1.0
+                speed REAL DEFAULT 1.0,
+                language TEXT
             )
             """
         )
+        book_columns = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
+        if "language" not in book_columns:
+            conn.execute("ALTER TABLE books ADD COLUMN language TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS chapters (
@@ -113,6 +117,7 @@ def init_db():
             """
         )
         _migrate_reassemble_existing_books(conn)
+        _migrate_book_languages(conn)
         conn.commit()
 
 
@@ -248,6 +253,32 @@ def _migrate_reassemble_existing_books(conn: sqlite3.Connection) -> None:
                         pass
 
 
+def _migrate_book_languages(conn: sqlite3.Connection) -> None:
+    """
+    Asigna idioma a los libros importados antes de que se guardara, detectándolo en su
+    texto porque la voz elegida no siempre coincide con el idioma del libro. La primera
+    vez revisa todos los libros; después, solo los que una versión anterior dejó sin idioma.
+    """
+    already_detected = conn.execute(
+        "SELECT 1 FROM app_settings WHERE key = 'book_languages_detected'"
+    ).fetchone()
+    query = "SELECT id, voice FROM books"
+    if already_detected:
+        query += " WHERE language IS NULL"
+
+    for book in conn.execute(query).fetchall():
+        chapters = conn.execute(
+            "SELECT text_content FROM chapters WHERE book_id = ? ORDER BY idx ASC LIMIT 20",
+            (book["id"],),
+        ).fetchall()
+        sample = " ".join(c["text_content"] for c in chapters)[:20000]
+        language = pdf_service.detect_language(sample) or tts_service.voice_language(book["voice"])
+        conn.execute("UPDATE books SET language = ? WHERE id = ?", (language, book["id"]))
+
+    if not already_detected:
+        conn.execute("INSERT INTO app_settings (key, value) VALUES ('book_languages_detected', '1')")
+
+
 def list_books() -> List[BookSummary]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM books ORDER BY last_read_at DESC").fetchall()
@@ -265,6 +296,7 @@ def list_books() -> List[BookSummary]:
                     current_chapter_idx=r["current_chapter_idx"],
                     current_sentence_idx=r["current_sentence_idx"],
                     voice=r["voice"],
+                    language=r["language"],
                     speed=r["speed"],
                     created_at=r["created_at"],
                     last_read_at=r["last_read_at"],
@@ -319,6 +351,7 @@ def get_book(book_id: str) -> Optional[BookDetail]:
             current_chapter_idx=r["current_chapter_idx"],
             current_sentence_idx=r["current_sentence_idx"],
             voice=active_voice,
+            language=r["language"],
             speed=r["speed"],
             created_at=r["created_at"],
             last_read_at=r["last_read_at"],
@@ -456,6 +489,7 @@ def insert_book(
     chapters_data: List[Dict[str, Any]],
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
+    language: Optional[str] = None,
 ):
     now = int(time.time())
     with get_connection() as conn:
@@ -464,8 +498,8 @@ def insert_book(
             INSERT INTO books (
                 id, title, author, file_path, cover_path, total_pages,
                 total_chapters, created_at, last_read_at, current_chapter_idx,
-                current_sentence_idx, voice, speed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+                current_sentence_idx, voice, speed, language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
             """,
             (
                 book_id,
@@ -479,6 +513,7 @@ def insert_book(
                 now,
                 voice,
                 speed,
+                language or tts_service.voice_language(voice),
             ),
         )
 
