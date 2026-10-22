@@ -8,9 +8,10 @@ interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  initialFile?: File | null;
 }
 
-export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
+export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [langFilter, setLangFilter] = useState<"es" | "en" | "all">("es");
@@ -21,6 +22,13 @@ export function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen && initialFile) {
+      setFile(initialFile);
+      setError(null);
+    }
+  }, [isOpen, initialFile]);
 
   useEffect(() => {
     if (isOpen && voices.length === 0) {

@@ -59,7 +59,7 @@ function ReaderContent() {
   const [duration, setDuration] = useState(0);
 
   // UI preferences
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [fontSize, setFontSize] = useState<FontSize>("base");
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
@@ -81,9 +81,9 @@ function ReaderContent() {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Cargar preferencias guardadas y tema
+  // Cargar preferencias guardadas y tema (oscuro por defecto)
   useEffect(() => {
-    const savedTheme = (localStorage.getItem("letha_theme") as Theme) || "light";
+    const savedTheme = (localStorage.getItem("letha_ui_theme") as Theme) || "dark";
     setTheme(savedTheme);
     applyTheme(savedTheme);
 
@@ -104,14 +104,15 @@ function ReaderContent() {
   }, []);
 
   const applyTheme = (t: Theme) => {
+    document.documentElement.classList.toggle("dark", t === "dark");
     document.body.classList.remove("theme-sepia", "theme-dark");
     if (t === "sepia") document.body.classList.add("theme-sepia");
     if (t === "dark") document.body.classList.add("theme-dark");
-    localStorage.setItem("letha_theme", t);
+    localStorage.setItem("letha_ui_theme", t);
   };
 
   const cycleTheme = () => {
-    const next: Theme = theme === "light" ? "sepia" : theme === "sepia" ? "dark" : "light";
+    const next: Theme = theme === "dark" ? "light" : theme === "light" ? "sepia" : "dark";
     setTheme(next);
     applyTheme(next);
   };
@@ -656,12 +657,12 @@ function ReaderContent() {
       )}
 
       {/* Barra superior de lectura */}
-      <header className="sticky top-0 z-30 border-b backdrop-blur-md bg-white/80 dark:bg-zinc-950/80 border-zinc-200 dark:border-zinc-800">
+      <header className="sticky top-0 z-30 border-b backdrop-blur-xl bg-white/65 dark:bg-slate-900/55 border-slate-300/60 dark:border-white/[0.08]">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
               title="Volver a la biblioteca"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -669,7 +670,7 @@ function ReaderContent() {
 
             <button
               onClick={() => setIsTocOpen(!isTocOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/40 dark:bg-white/[0.05] border border-slate-300/60 dark:border-white/10 hover:bg-white/70 dark:hover:bg-white/10 transition"
             >
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">Índice</span>
@@ -678,13 +679,13 @@ function ReaderContent() {
 
           <div className="flex-1 text-center truncate px-2">
             <h2 className="text-xs font-bold truncate">{book?.title || "Cargando..."}</h2>
-            <p className="text-[11px] text-zinc-400 truncate">{chapter?.title}</p>
+            <p className="text-[11px] text-slate-400 truncate">{chapter?.title}</p>
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={cycleFontSize}
-              className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition flex items-center gap-1"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition flex items-center gap-1"
               title="Cambiar tamaño de texto"
             >
               <Type className="w-4 h-4" />
@@ -693,17 +694,17 @@ function ReaderContent() {
 
             <button
               onClick={cycleTheme}
-              className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
               title="Cambiar tema de color"
             >
               {theme === "light" && <Sun className="w-4 h-4 text-amber-500" />}
-              {theme === "sepia" && <Coffee className="w-4 h-4 text-amber-700" />}
-              {theme === "dark" && <Moon className="w-4 h-4 text-indigo-400" />}
+              {theme === "sepia" && <Coffee className="w-4 h-4 text-amber-600" />}
+              {theme === "dark" && <Moon className="w-4 h-4 text-amber-300" />}
             </button>
 
             <Link
               href={`/settings?bookId=${bookId}`}
-              className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
               title="Configuración de la app"
             >
               <Settings className="w-4 h-4" />
@@ -712,14 +713,14 @@ function ReaderContent() {
             <select
               value={selectedVoice || "es-MX-DaliaNeural"}
               onChange={(e) => handleVoiceChange(e.target.value)}
-              className="max-w-[160px] sm:max-w-[240px] text-xs font-medium bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+              className="max-w-[160px] sm:max-w-[240px] text-xs font-medium bg-white/40 dark:bg-white/[0.05] border border-slate-300/60 dark:border-white/10 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer truncate"
               title="Cambiar persona que narra"
             >
               {voices.map((v) => (
                 <option
                   key={v.short_name}
                   value={v.short_name}
-                  className="bg-white dark:bg-zinc-900"
+                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
                 >
                   {v.friendly_name}
                 </option>
@@ -730,18 +731,18 @@ function ReaderContent() {
 
         {/* Barra superior de progreso de fragmentos de voz (1 de 5 .. 5 de 5) */}
         {isSynthesizing && (
-          <div className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-1.5">
+          <div className="border-t border-amber-400/20 bg-amber-500/10 backdrop-blur-md px-4 py-1.5">
             <div className="max-w-3xl mx-auto flex items-center gap-3">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 shrink-0" />
-              <div className="flex-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
+              <div className="flex-1 h-1.5 bg-slate-300/50 dark:bg-white/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-amber-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-gradient-to-r from-amber-500 to-sky-400 transition-all duration-300 rounded-full"
                   style={{
                     width: `${Math.max(10, (loadedParts / TOTAL_PARTS) * 100)}%`,
                   }}
                 />
               </div>
-              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-300 tabular-nums shrink-0">
                 {Math.max(1, loadedParts)} de {TOTAL_PARTS}
               </span>
             </div>
@@ -851,7 +852,7 @@ function ReaderContent() {
       </main>
 
       {/* Barra de Transporte Flotante de Audio */}
-      <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95 border-zinc-200 dark:border-zinc-800 shadow-2xl px-4 py-3">
+      <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/75 dark:bg-slate-900/65 border-slate-300/60 dark:border-white/[0.08] shadow-2xl px-4 py-3">
         <div className="max-w-3xl mx-auto flex flex-col gap-2">
           {!audioUrl && isSynthesizing ? (
             <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">

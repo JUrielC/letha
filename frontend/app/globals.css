@@ -3,27 +3,46 @@
 @tailwind utilities;
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --bg: #0a1729;
+  --panel: #0e1d33;
+  --line: rgba(234, 241, 250, 0.12);
+  --line-strong: rgba(234, 241, 250, 0.24);
+  --text: #eaf1fa;
+  --text-2: #c3cfdd;
+  --muted: #93a3b8;
+  --accent: #1ea7e8;
+  --accent-soft: #64c7f5;
+  --read-highlight: rgba(30, 167, 232, 0.22);
+
+  --background: var(--bg);
+  --foreground: var(--text);
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text);
+  background-color: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Modo Claro */
+body:not(.theme-dark):not(.theme-sepia) {
+  --bg: #0a1729;
+  --panel: #0e1d33;
+  color: var(--text);
+  background-color: var(--bg);
+}
+
 /* Modo Sepia */
 body.theme-sepia {
-  background-color: #f8f1e3;
+  background-color: #f6efe2;
   color: #3c3328;
 }
 
-/* Modo Oscuro */
+/* Modo Oscuro por defecto (#0a1729) */
 body.theme-dark {
-  background-color: #0f1012;
-  color: #e4e4e7;
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 /* Transición suave para el texto resaltado */
@@ -33,18 +52,75 @@ body.theme-dark {
   padding: 2px 4px;
 }
 
-.sentence-active-light {
-  background-color: #fef08a; /* yellow-200 */
-  color: #1c1917;
+.sentence-active-light,
+.sentence-active-dark {
+  background-color: rgba(30, 167, 232, 0.22);
+  color: #eaf1fa;
 }
 
 .sentence-active-sepia {
   background-color: #eed08b;
   color: #27211a;
-  box-shadow: 0 0 0 2px #eed08b;
 }
 
-.sentence-active-dark {
-  background-color: #3f3f46; /* zinc-700 */
-  color: #ffffff;
+/* Slider personalizado: track 2px --line-strong y thumb circular --accent de 20px */
+input[type="range"].letha-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 9999px;
+  outline: none;
+}
+
+input[type="range"].letha-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg);
+}
+
+input[type="range"].letha-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg);
+}
+
+/* Animación de entrada desde abajo para las tarjetas de libros */
+@keyframes riseFromBottomGradient {
+  0% {
+    opacity: 0;
+    transform: translateY(36px) scale(0.97);
+    filter: blur(4px);
+    -webkit-mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.4) 40%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.4) 40%, rgba(0, 0, 0, 1) 100%);
+  }
+  32% {
+    opacity: 1;
+    filter: blur(0px);
+    -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+    -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 100%);
+  }
+}
+
+.animate-rise-gradient {
+  position: relative;
+  opacity: 0;
+  animation: riseFromBottomGradient 0.68s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity, filter;
 }

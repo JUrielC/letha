@@ -1,25 +1,118 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import {
-  AlignLeft,
-  ArrowLeft,
-  Check,
-  Loader2,
-  MousePointerClick,
-  PlayCircle,
-  RotateCcw,
-  Settings,
-  Sparkles,
-  Type,
-} from "lucide-react";
+import { ArrowLeft, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { api } from "@/lib/api";
 
 const DEFAULT_PERCENT = 85;
 const PRESET_PERCENTS = [75, 80, 85, 90, 95, 100];
+const DEFAULT_VOICE = "es-MX-DaliaNeural";
+
+type Boundary = "SentenceBoundary" | "WordBoundary";
+
+interface OptionDef<T> {
+  value: T;
+  title: string;
+  description: string;
+  isDefault?: boolean;
+  technical?: string;
+  example?: React.ReactNode;
+}
+
+const HIGHLIGHT = "rgba(30,167,232,0.22)";
+
+function OptionGrid<T extends string | boolean>({
+  name,
+  legend,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  legend: string;
+  description: string;
+  options: OptionDef<T>[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <fieldset className="border-t py-12" style={{ borderColor: "var(--line)" }}>
+      <legend className="sr-only">{legend}</legend>
+      <h2 className="text-lg font-bold text-[#eaf1fa]" aria-hidden="true">
+        {legend}
+      </h2>
+      <p className="text-sm text-[#93a3b8] mt-1 mb-6 max-w-3xl">{description}</p>
+
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          borderTop: "1px solid var(--line)",
+          borderLeft: "1px solid var(--line)",
+        }}
+      >
+        {options.map((opt) => {
+          const selected = opt.value === value;
+          const id = `${name}-${String(opt.value)}`;
+          return (
+            <label
+              key={id}
+              htmlFor={id}
+              className={`flex gap-3 p-6 cursor-pointer transition-colors ${
+                selected ? "" : "hover:bg-[#0e1d33]/60"
+              }`}
+              style={{
+                borderRight: "1px solid var(--line)",
+                borderBottom: "1px solid var(--line)",
+                backgroundColor: selected ? "var(--panel)" : "transparent",
+                boxShadow: selected ? "inset 0 2px 0 #1ea7e8" : "none",
+              }}
+            >
+              <input
+                id={id}
+                type="radio"
+                name={name}
+                checked={selected}
+                onChange={() => onChange(opt.value)}
+                className="mt-1 w-4 h-4 shrink-0 cursor-pointer"
+                style={{ accentColor: "#1ea7e8" }}
+              />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-sm text-[#eaf1fa]">{opt.title}</span>
+                  {opt.isDefault && (
+                    <span
+                      className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border text-[#64c7f5]"
+                      style={{ borderColor: "var(--line-strong)" }}
+                    >
+                      Por defecto
+                    </span>
+                  )}
+                </div>
+                {opt.technical && (
+                  <p className="text-xs font-mono text-[#64c7f5]">{opt.technical}</p>
+                )}
+                <p className="text-xs leading-relaxed text-[#c3cfdd]">{opt.description}</p>
+                {opt.example && (
+                  <div
+                    className="mt-3 p-3 rounded-lg border text-sm text-[#eaf1fa] font-serif"
+                    style={{ backgroundColor: "var(--bg)", borderColor: "var(--line)" }}
+                  >
+                    {opt.example}
+                  </div>
+                )}
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 function SettingsContent() {
   const searchParams = useSearchParams();
@@ -27,13 +120,16 @@ function SettingsContent() {
 
   const [percent, setPercent] = useState<number>(DEFAULT_PERCENT);
   const [autoAdvance, setAutoAdvance] = useState<boolean>(true);
-  const [boundaryType, setBoundaryType] = useState<"SentenceBoundary" | "WordBoundary">(
-    "SentenceBoundary"
-  );
+  const [boundaryType, setBoundaryType] = useState<Boundary>("SentenceBoundary");
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedNotice, setSavedNotice] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [sampleVoice, setSampleVoice] = useState<string>(DEFAULT_VOICE);
+  const [sampleState, setSampleState] = useState<"idle" | "loading" | "playing">("idle");
+
+  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -42,43 +138,53 @@ function SettingsContent() {
       .then((s) => {
         setPercent(Math.round((s.edge_base_speed || 0.85) * 100));
         setAutoAdvance(s.auto_advance_sentence ?? true);
-        setBoundaryType(
-          s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary"
-        );
+        setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
         setError("No se pudo cargar la configuración actual.");
       })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+      .finally(() => setLoading(false));
+
+    // Voz para la muestra: la del libro abierto (si se llegó desde el lector) o la del último libro leído
+    api
+      .getBooks()
+      .then((books) => {
+        const fromBook = bookId ? books.find((b) => b.id === bookId) : undefined;
+        const v = fromBook?.voice || books[0]?.voice;
+        if (v) setSampleVoice(v);
+      })
+      .catch(() => {});
+
+    return () => {
+      sampleAudioRef.current?.pause();
+    };
+  }, [bookId]);
 
   const rateDiff = percent - 100;
   const rateLabel = rateDiff >= 0 ? `+${rateDiff}%` : `${rateDiff}%`;
 
-  const saveSettings = async (
-    nextPercent: number,
-    nextAutoAdvance: boolean,
-    nextBoundary: "SentenceBoundary" | "WordBoundary"
-  ) => {
+  const saveSettings = (nextPercent: number, nextAutoAdvance: boolean, nextBoundary: Boundary) => {
     setSaving(true);
     setError(null);
-    try {
-      const decimal = Number((nextPercent / 100).toFixed(2));
-      await api.updateAppSettings({
-        edge_base_speed: decimal,
-        auto_advance_sentence: nextAutoAdvance,
-        boundary_type: nextBoundary,
-      });
-      setSavedNotice(true);
-      setTimeout(() => setSavedNotice(false), 2000);
-    } catch (err: any) {
-      setError(err.message || "No se pudo guardar la configuración.");
-    } finally {
-      setSaving(false);
-    }
+    const p = (async () => {
+      try {
+        const decimal = Number((nextPercent / 100).toFixed(2));
+        await api.updateAppSettings({
+          edge_base_speed: decimal,
+          auto_advance_sentence: nextAutoAdvance,
+          boundary_type: nextBoundary,
+        });
+        setSavedNotice(true);
+        setTimeout(() => setSavedNotice(false), 2000);
+      } catch (err: any) {
+        setError(err.message || "No se pudo guardar la configuración.");
+      } finally {
+        setSaving(false);
+      }
+    })();
+    savePromiseRef.current = p;
+    return p;
   };
 
   const handleModeChange = (nextAuto: boolean) => {
@@ -86,7 +192,7 @@ function SettingsContent() {
     saveSettings(percent, nextAuto, boundaryType);
   };
 
-  const handleBoundaryChange = (nextBoundary: "SentenceBoundary" | "WordBoundary") => {
+  const handleBoundaryChange = (nextBoundary: Boundary) => {
     setBoundaryType(nextBoundary);
     saveSettings(percent, autoAdvance, nextBoundary);
   };
@@ -96,269 +202,281 @@ function SettingsContent() {
     saveSettings(p, autoAdvance, boundaryType);
   };
 
+  const handleSample = async () => {
+    if (sampleState === "playing") {
+      sampleAudioRef.current?.pause();
+      setSampleState("idle");
+      return;
+    }
+    setSampleState("loading");
+    try {
+      // Asegurar que la velocidad elegida ya está guardada antes de pedir la muestra
+      if (savePromiseRef.current) await savePromiseRef.current;
+      sampleAudioRef.current?.pause();
+      const audio = new Audio(`${api.getVoicePreviewUrl(sampleVoice)}&t=${Date.now()}`);
+      sampleAudioRef.current = audio;
+      audio.onended = () => setSampleState("idle");
+      audio.onerror = () => setSampleState("idle");
+      await audio.play();
+      setSampleState("playing");
+    } catch {
+      setSampleState("idle");
+    }
+  };
+
+  const modeOptions: OptionDef<boolean>[] = [
+    {
+      value: true,
+      title: "Lectura en automático",
+      isDefault: true,
+      description:
+        "Lee una oración enseguida de la otra de forma continua mientras las va resaltando en la página.",
+    },
+    {
+      value: false,
+      title: "Solo al clickear la frase",
+      description:
+        "Reproduce únicamente la oración en la que hagas clic y se detiene automáticamente al terminarla.",
+    },
+  ];
+
+  const boundaryOptions: OptionDef<Boundary>[] = [
+    {
+      value: "SentenceBoundary",
+      title: "Por oración",
+      technical: "SentenceBoundary",
+      isDefault: true,
+      description:
+        "Mayor fluidez por oración: sincroniza y selecciona oraciones completas de principio a fin, ideal para lectura fluida por bloques.",
+      example: (
+        <span>
+          <span style={{ backgroundColor: HIGHLIGHT }} className="rounded px-0.5">
+            It was a place that she would like.
+          </span>{" "}
+          <span className="text-[#93a3b8]">She always dreamed of it.</span>
+        </span>
+      ),
+    },
+    {
+      value: "WordBoundary",
+      title: "Por palabra",
+      technical: "WordBoundary",
+      description:
+        "Permite seleccionar palabras individuales: extrae el tiempo exacto de cada palabra para que puedas hacer clic en cualquier palabra de una frase y escuchar solo esa palabra.",
+      example: (
+        <span>
+          It was a{" "}
+          <span style={{ backgroundColor: HIGHLIGHT }} className="rounded px-0.5">
+            place
+          </span>{" "}
+          that she would like.
+        </span>
+      ),
+    },
+  ];
+
+  const presetActiveStyle = { background: "linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%)" };
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--bg)" }}>
       <Navbar />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <main className="flex-1 w-full max-w-[1320px] mx-auto px-[28px] pt-[72px] pb-16">
+        {/* Encabezado */}
+        <header className="flex flex-wrap items-end justify-between gap-4 pb-12">
           <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                <Settings className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                  Configuración
-                </h1>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  Personaliza el modo de lectura, la selección de palabras y la velocidad nativa de síntesis de voz.
-                </p>
-              </div>
-            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#eaf1fa]">
+              Configuración
+            </h1>
+            <p className="text-sm text-[#c3cfdd] mt-1">
+              Personaliza el modo de lectura, la selección de palabras y la velocidad de la voz. Los cambios se guardan solos.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {savedNotice && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                <Check className="w-3.5 h-3.5" />
-                <span>Cambios guardados</span>
-              </span>
-            )}
-
-            {bookId ? (
-              <Link
-                href={`/reader?id=${bookId}`}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Volver al libro</span>
-              </Link>
-            ) : (
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Volver a la biblioteca</span>
-              </Link>
-            )}
-          </div>
-        </div>
+          <Link
+            href={bookId ? `/reader?id=${bookId}` : "/"}
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border text-[#eaf1fa] hover:bg-[#0e1d33] transition"
+            style={{ borderColor: "var(--line-strong)" }}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>{bookId ? "Volver al libro" : "Volver a la biblioteca"}</span>
+          </Link>
+        </header>
 
         {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3 text-zinc-400">
-            <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+          <div className="py-24 flex flex-col items-center justify-center gap-3 text-[#93a3b8]">
+            <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
             <span className="text-sm">Cargando configuración...</span>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Sección 1: Modo de avance de oraciones */}
-            <section className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-              <div>
-                <h2 className="text-base font-bold flex items-center gap-2">
-                  <MousePointerClick className="w-4 h-4 text-amber-500" />
-                  <span>Modo de lectura de oraciones</span>
-                </h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                  Elige si deseas que la lectura avance de corrido oración tras oración o que se lea únicamente la frase que selecciones con un clic. Cambiar esta opción no realiza solicitudes adicionales a Edge-TTS.
-                </p>
-              </div>
+          <>
+            <OptionGrid
+              name="reading-mode"
+              legend="Modo de lectura"
+              description="Elige si la lectura avanza de corrido oración tras oración o si solo se lee la frase que selecciones. Cambiar esta opción no realiza solicitudes adicionales a Edge-TTS."
+              options={modeOptions}
+              value={autoAdvance}
+              onChange={handleModeChange}
+            />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleModeChange(true)}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border text-left transition ${
-                    autoAdvance
-                      ? "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-700 dark:text-zinc-300 hover:border-amber-400"
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-2 font-bold text-sm">
-                      <PlayCircle className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span>Lectura en automático</span>
-                    </div>
-                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                      Por defecto
-                    </span>
-                  </div>
-                  <p className="text-xs leading-relaxed opacity-85">
-                    Lee una oración enseguida de la otra de forma continua mientras las va resaltando en la página.
-                  </p>
-                </button>
+            <OptionGrid
+              name="boundary"
+              legend="Granularidad de marcas de voz"
+              description="Controla el tipo de marcas de tiempo que Letha solicita a Edge-TTS en cada fragmento de página."
+              options={boundaryOptions}
+              value={boundaryType}
+              onChange={handleBoundaryChange}
+            />
 
-                <button
-                  type="button"
-                  onClick={() => handleModeChange(false)}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border text-left transition ${
-                    !autoAdvance
-                      ? "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-700 dark:text-zinc-300 hover:border-amber-400"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-sm">
-                    <MousePointerClick className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span>Solo al clickear la frase</span>
-                  </div>
-                  <p className="text-xs leading-relaxed opacity-85">
-                    Reproduce únicamente la oración en la que hagas clic y se detiene automáticamente al terminarla.
-                  </p>
-                </button>
-              </div>
-            </section>
-
-            {/* Sección 2: Granularidad de sincronización (SentenceBoundary vs WordBoundary) */}
-            <section className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-              <div>
-                <h2 className="text-base font-bold flex items-center gap-2">
-                  <Type className="w-4 h-4 text-amber-500" />
-                  <span>Granularidad de marcas de voz (SentenceBoundary vs WordBoundary)</span>
-                </h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                  Controla el tipo de marcas de tiempo que solicita Letha a Edge-TTS en cada fragmento de página.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleBoundaryChange("SentenceBoundary")}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border text-left transition ${
-                    boundaryType === "SentenceBoundary"
-                      ? "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-700 dark:text-zinc-300 hover:border-amber-400"
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-2 font-bold text-sm">
-                      <AlignLeft className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span>Por oración (SentenceBoundary)</span>
-                    </div>
-                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                      Por defecto
-                    </span>
-                  </div>
-                  <p className="text-xs leading-relaxed opacity-85">
-                    <strong>Mayor fluidez por oración:</strong> sincroniza y selecciona oraciones completas de principio a fin, ideal para lectura fluida por bloques.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleBoundaryChange("WordBoundary")}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border text-left transition ${
-                    boundaryType === "WordBoundary"
-                      ? "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-700 dark:text-zinc-300 hover:border-amber-400"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-sm">
-                    <Type className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span>Por palabra (WordBoundary)</span>
-                  </div>
-                  <p className="text-xs leading-relaxed opacity-85">
-                    <strong>Permite seleccionar palabras individuales:</strong> extrae el tiempo exacto de cada palabra para que puedas hacer clic en cualquier palabra de una frase y escuchar solo esa palabra.
-                  </p>
-                </button>
-              </div>
-            </section>
-
-            {/* Sección 3: Velocidad nativa de Edge-TTS */}
-            <section className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span>Velocidad nativa de lectura (Edge-TTS)</span>
+            {/* Velocidad de la voz */}
+            <section
+              className="border-t py-12 space-y-8"
+              style={{ borderColor: "var(--line)" }}
+              aria-labelledby="speed-title"
+            >
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="max-w-3xl">
+                  <h2 id="speed-title" className="text-lg font-bold text-[#eaf1fa]">
+                    Velocidad de la voz
                   </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                    Define la velocidad a la que el modelo neural de Microsoft Edge-TTS genera el audio de origen, conservando la entonación natural sin distorsión.
+                  <p className="text-sm text-[#93a3b8] mt-1">
+                    Define la velocidad a la que el modelo neural de Edge-TTS genera el audio de origen, conservando la entonación natural sin distorsión.
                   </p>
                 </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
-                  <span className="text-2xl font-extrabold text-amber-600 dark:text-amber-400 tabular-nums">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-extrabold text-[#eaf1fa] tabular-nums">
                     {percent}%
                   </span>
-                  <span className="text-xs font-mono px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                  <span
+                    className="text-xs font-mono px-2 py-1 rounded-lg border text-[#64c7f5]"
+                    style={{ borderColor: "var(--line-strong)" }}
+                  >
                     rate {rateLabel}
                   </span>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <input
-                  type="range"
-                  min={50}
-                  max={120}
-                  step={1}
-                  value={percent}
-                  onChange={(e) => setPercent(Number(e.target.value))}
-                  onMouseUp={() => saveSettings(percent, autoAdvance, boundaryType)}
-                  onTouchEnd={() => saveSettings(percent, autoAdvance, boundaryType)}
-                  className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
-                <div className="flex justify-between text-xs text-zinc-400 font-medium">
-                  <span>50% (Más lento)</span>
-                  <span>85% (Por defecto)</span>
-                  <span>100% (Estándar Edge)</span>
+              <div className="space-y-3">
+                <label htmlFor="speed-slider" className="sr-only">
+                  Velocidad de la voz en porcentaje
+                </label>
+                <div className="h-[44px] flex items-center">
+                  <input
+                    id="speed-slider"
+                    type="range"
+                    min={50}
+                    max={120}
+                    step={5}
+                    value={percent}
+                    onChange={(e) => setPercent(Number(e.target.value))}
+                    onMouseUp={() => saveSettings(percent, autoAdvance, boundaryType)}
+                    onTouchEnd={() => saveSettings(percent, autoAdvance, boundaryType)}
+                    onKeyUp={() => saveSettings(percent, autoAdvance, boundaryType)}
+                    className="letha-slider"
+                    aria-valuetext={`${percent}%`}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-[#93a3b8] font-medium">
+                  <span>50% · Lento</span>
+                  <span>85% · Recomendado</span>
+                  <span>100% · Edge</span>
                   <span>120%</span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  {PRESET_PERCENTS.map((p) => (
+              <div className="flex flex-wrap items-center gap-2">
+                {PRESET_PERCENTS.map((p) => {
+                  const active = percent === p;
+                  return (
                     <button
                       key={p}
                       type="button"
                       onClick={() => handlePresetClick(p)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                        percent === p
-                          ? "bg-amber-500 text-white shadow-sm"
-                          : "bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-amber-400"
+                      aria-pressed={active}
+                      className={`min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                        active ? "text-[#0a1729] border-transparent" : "text-[#c3cfdd] hover:text-[#64c7f5]"
                       }`}
+                      style={active ? presetActiveStyle : { borderColor: "var(--line-strong)" }}
                     >
-                      {p}%{p === DEFAULT_PERCENT ? " · Por defecto" : ""}
+                      {p}%{p === DEFAULT_PERCENT ? " · Recomendado" : ""}
                     </button>
-                  ))}
+                  );
+                })}
 
-                  {percent !== DEFAULT_PERCENT && (
-                    <button
-                      type="button"
-                      onClick={() => handlePresetClick(DEFAULT_PERCENT)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-zinc-500 hover:text-amber-500 transition"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Restaurar al 85%</span>
-                    </button>
-                  )}
+                {percent !== DEFAULT_PERCENT && (
+                  <button
+                    type="button"
+                    onClick={() => handlePresetClick(DEFAULT_PERCENT)}
+                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-[#93a3b8] hover:text-[#64c7f5] transition"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restaurar a 85%</span>
+                  </button>
+                )}
+              </div>
+
+              <div
+                className="flex flex-wrap items-center justify-between gap-4 p-6 rounded-2xl border"
+                style={{ backgroundColor: "var(--panel)", borderColor: "var(--line)" }}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-[#eaf1fa]">Escucha una muestra</p>
+                  <p className="text-xs text-[#93a3b8] mt-0.5">
+                    Reproduce una frase corta a {percent}% con la voz de tu libro.
+                  </p>
                 </div>
-
                 <button
                   type="button"
-                  onClick={() => saveSettings(percent, autoAdvance, boundaryType)}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-sm disabled:opacity-50 transition"
+                  onClick={handleSample}
+                  disabled={sampleState === "loading"}
+                  className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-[#0a1729] disabled:opacity-60 transition hover:opacity-95"
+                  style={presetActiveStyle}
                 >
-                  {saving ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  {sampleState === "loading" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : sampleState === "playing" ? (
+                    <Square className="w-4 h-4 fill-current" />
                   ) : (
-                    <Check className="w-3.5 h-3.5" />
+                    <Play className="w-4 h-4 fill-current" />
                   )}
-                  <span>Guardar configuración</span>
+                  <span>{sampleState === "playing" ? "Detener" : "Probar velocidad"}</span>
                 </button>
               </div>
             </section>
 
             {error && (
-              <p className="text-xs font-medium text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3">
+              <p
+                role="alert"
+                className="text-xs font-medium text-red-300 border border-red-400/30 rounded-xl px-4 py-3 mb-6"
+              >
                 {error}
               </p>
             )}
-          </div>
+
+            {/* Pie */}
+            <footer
+              className="border-t pt-8 flex items-center gap-2 text-xs text-[#93a3b8]"
+              style={{ borderColor: "var(--line)" }}
+              aria-live="polite"
+            >
+              {saving ? (
+                <Loader2 className="w-3 h-3 animate-spin text-[#1ea7e8]" />
+              ) : (
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: "var(--accent)" }}
+                  aria-hidden="true"
+                />
+              )}
+              <span>
+                {saving
+                  ? "Guardando…"
+                  : savedNotice
+                  ? "Cambios guardados"
+                  : "Cambios guardados en este equipo"}
+              </span>
+            </footer>
+          </>
         )}
       </main>
     </div>
@@ -369,8 +487,8 @@ export default function SettingsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-zinc-400 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        <div className="min-h-screen flex items-center justify-center text-[#93a3b8] gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
           <span className="text-sm">Cargando configuración...</span>
         </div>
       }
