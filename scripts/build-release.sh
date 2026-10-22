@@ -26,7 +26,7 @@ xcrun swiftc -O -target arm64-apple-macos12 \
 echo "→ 3. Construyendo el wheel multiplataforma de Python con uv..."
 rm -rf "$ROOT/dist"
 (cd "$ROOT/backend" && uv build --wheel --out-dir "$ROOT/dist")
-cp "$ROOT/scripts/install.sh" "$ROOT/dist/install.sh"
+cp "$ROOT/scripts/install.sh" "$ROOT/scripts/install.ps1" "$ROOT/dist/"
 
 WHEEL="$(ls "$ROOT"/dist/*.whl | head -1)"
 echo "✓ Listo: $WHEEL ($(du -h "$WHEEL" | cut -f1))"

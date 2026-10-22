@@ -1,10 +1,12 @@
 # Instala Letha en Windows (Windows 10 / 11):
 #
 # En PowerShell:
-#   irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex
+#   irm https://github.com/JUrielC/letha/releases/latest/download/install.ps1 | iex
 #
 # En CMD (Símbolo del sistema):
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex"
+#   powershell -ExecutionPolicy Bypass -c "irm https://github.com/JUrielC/letha/releases/latest/download/install.ps1 | iex"
+#
+# Los textos van sin acentos: GitHub sirve los assets sin charset y Windows PowerShell 5.1 los decodificaría mal.
 
 $ErrorActionPreference = "Stop"
 $Repo = "JUrielC/letha"
@@ -24,7 +26,7 @@ foreach ($p in $UvPaths) {
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "-> Instalando uv (instalador ultrarrápido de Python)..."
+    Write-Host "-> Instalando uv (instalador ultrarrapido de Python)..."
     Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     foreach ($p in $UvPaths) {
         if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) {
@@ -34,7 +36,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    throw "No se pudo instalar uv. Verifica tu conexión a internet e inténtalo de nuevo."
+    throw "No se pudo instalar uv. Verifica tu conexion a internet e intentalo de nuevo."
 }
 
 # 2. Obtener el wheel de la última release de GitHub
@@ -61,7 +63,7 @@ if ([string]::IsNullOrWhiteSpace($Wheel)) {
     }
 
     if ([string]::IsNullOrWhiteSpace($Wheel)) {
-        throw "No se encontró ninguna versión publicada (.whl) en los Releases de $Repo."
+        throw "No se encontro ninguna version publicada (.whl) en los Releases de $Repo."
     }
 }
 
@@ -75,7 +77,7 @@ if (-not (Test-Path $Pythonw)) {
     $Pythonw = Join-Path $ToolDir "letha\Scripts\python.exe"
 }
 if (-not (Test-Path $Pythonw)) {
-    throw "La instalación finalizó pero no se encontró el ejecutable de Letha en $ToolDir."
+    throw "La instalacion finalizo pero no se encontro el ejecutable de Letha en $ToolDir."
 }
 
 # 4. Crear accesos directos en el Menú Inicio y en el Escritorio
@@ -88,7 +90,7 @@ foreach ($ShortcutPath in @($StartMenuShortcut, $DesktopShortcut)) {
     $Shortcut.TargetPath = $Pythonw
     $Shortcut.Arguments = "-m letha.app"
     $Shortcut.WorkingDirectory = $env:USERPROFILE
-    $Shortcut.Description = "Letha — Lector de PDFs y Audiolibro Sincronizado"
+    $Shortcut.Description = "Letha - Lector de PDFs y Audiolibro Sincronizado"
     $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,21"
     $Shortcut.Save()
 }
@@ -96,7 +98,7 @@ foreach ($ShortcutPath in @($StartMenuShortcut, $DesktopShortcut)) {
 Write-Host ""
 Write-Host "Listo. Letha se ha instalado correctamente:" -ForegroundColor Green
 Write-Host "  - Acceso directo en tu Escritorio (Letha)"
-Write-Host "  - Acceso directo en tu Menú Inicio (presiona la tecla Windows y escribe 'Letha')"
+Write-Host "  - Acceso directo en tu Menu Inicio (presiona la tecla Windows y escribe 'Letha')"
 Write-Host ""
 Write-Host "Para desinstalar:"
 Write-Host '  uv tool uninstall letha; Remove-Item "$env:USERPROFILE\Desktop\Letha.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Letha.lnk", "$env:USERPROFILE\.cache\letha", "$env:USERPROFILE\.local\share\letha" -Recurse -Force -ErrorAction SilentlyContinue'

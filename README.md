@@ -33,13 +33,13 @@ Cuando termine, Letha queda en tu carpeta de **Aplicaciones**: ábrelo con Spotl
 En **PowerShell**:
 
 ```powershell
-irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex
+irm https://github.com/JUrielC/letha/releases/latest/download/install.ps1 | iex
 ```
 
 O en **CMD (Símbolo del sistema)**:
 
 ```cmd
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/JUrielC/letha/releases/latest/download/install.ps1 | iex"
 ```
 
 Cuando termine, Letha creará un acceso directo en tu **Escritorio** y en el **Menú Inicio** (presiona la tecla Windows y escribe "Letha"), abriéndose en su propia ventana sin consola.
@@ -86,9 +86,9 @@ Para generar el paquete multiplataforma empaquetado (Next.js compilado + ventana
 ```bash
 ./scripts/build-release.sh
 ```
-El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows), junto a una copia de `install.sh`.
+El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows), junto a copias de `install.sh` e `install.ps1`.
 
-Para publicarlo, sube **ambos** archivos al release: el comando de instalación descarga `install.sh` desde `releases/latest/download/`, así que un release sin él rompe la instalación.
+Para publicarlo, sube **los tres** archivos al release: los comandos de instalación descargan `install.sh` e `install.ps1` desde `releases/latest/download/`, así que un release sin ellos rompe la instalación.
 ```bash
 gh release create v<versión> dist/* --title "Letha <versión>" --latest
 ```
