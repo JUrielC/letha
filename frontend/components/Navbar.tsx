@@ -1,132 +1,151 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Plus, Moon, Sun, Coffee, Settings, Library } from "lucide-react";
+import { Plus, Moon, Sun, Coffee } from "lucide-react";
+import { useTheme } from "@/lib/useTheme";
 
 interface NavbarProps {
   onOpenUpload?: () => void;
 }
 
-export type Theme = "light" | "sepia" | "dark";
-
 export function Navbar({ onOpenUpload }: NavbarProps) {
   const pathname = usePathname();
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    const saved = (localStorage.getItem("letha_ui_theme") as Theme) || "dark";
-    setTheme(saved);
-    applyTheme(saved);
-  }, []);
-
-  const applyTheme = (t: Theme) => {
-    document.documentElement.classList.toggle("dark", t === "dark");
-    document.body.classList.remove("theme-sepia", "theme-dark");
-    if (t === "sepia") document.body.classList.add("theme-sepia");
-    if (t === "dark") document.body.classList.add("theme-dark");
-    localStorage.setItem("letha_ui_theme", t);
-  };
-
-  const cycleTheme = () => {
-    const next: Theme = theme === "dark" ? "light" : theme === "light" ? "sepia" : "dark";
-    setTheme(next);
-    applyTheme(next);
-  };
-
+  const { theme, setTheme } = useTheme();
   const isSettingsPage = pathname?.startsWith("/settings");
 
   return (
-    <header
-      className="sticky top-0 z-30 border-b backdrop-blur-xl flex items-center"
-      style={{
-        paddingTop: "16px",
-        paddingBottom: "16px",
-        backgroundColor: "var(--header-bg)",
-        borderColor: "var(--line)",
-      }}
-    >
-      <div className="max-w-[1320px] mx-auto px-[28px] w-full flex items-center justify-between gap-4">
-        {/* Izquierda: logo + Letha */}
-        <Link href="/" className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-[#eaf1fa]">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-[#0a1729]"
-            style={{
-              background: "linear-gradient(135deg, #1ea7e8 0%, #64c7f5 100%)",
-            }}
-          >
-            <BookOpen className="w-5 h-5" />
-          </div>
+    <div className="sticky top-0 z-30 w-full p-4 pb-0 pointer-events-none">
+      <header
+        className="glass pointer-events-auto max-w-[1148px] mx-auto px-[18px] py-[10px] flex items-center justify-between gap-4 flex-wrap rounded-[22px]"
+        style={{
+          background: "var(--glass-bar)",
+          boxShadow: "var(--ring-bar)",
+        }}
+      >
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 font-semibold text-lg tracking-[-0.01em]"
+          style={{ color: "var(--ink)" }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="2.4" rx="1.2" fill="var(--ink)" />
+            <rect x="1" y="9.2" width="18" height="5.6" rx="2" fill="var(--logo-hl)" />
+            <rect x="2" y="10.8" width="15" height="2.4" rx="1.2" fill="var(--accent)" />
+            <rect x="2" y="17.6" width="11" height="2.4" rx="1.2" fill="var(--ink)" />
+          </svg>
           <span>Letha</span>
         </Link>
 
-        {/* Centro: nav */}
-        <nav className="flex items-center gap-2" aria-label="Navegación principal">
+        <nav aria-label="Navegación principal" className="flex items-center gap-1 flex-1 min-w-0">
           <Link
             href="/"
-            className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              !isSettingsPage
-                ? "bg-[#1ea7e8]/15 text-[#64c7f5]"
-                : "text-[#c3cfdd] hover:text-[#64c7f5]"
+            aria-current={!isSettingsPage ? "page" : undefined}
+            className={`px-3.5 py-2 rounded-full text-sm font-medium transition ${
+              !isSettingsPage ? "" : "quiet text-[var(--muted)]"
             }`}
-            style={
-              !isSettingsPage
-                ? { boxShadow: "inset 0 -2px 0 #1ea7e8" }
-                : undefined
-            }
+            style={{
+              background: !isSettingsPage ? "var(--glass-seg-on)" : "transparent",
+              boxShadow: !isSettingsPage ? "var(--ring-pill-on)" : "none",
+              color: !isSettingsPage ? "var(--ink)" : "var(--muted)",
+            }}
           >
-            <Library className="w-3.5 h-3.5" />
-            <span>Biblioteca</span>
+            Biblioteca
           </Link>
-
           <Link
             href="/settings"
-            className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              isSettingsPage
-                ? "bg-[#1ea7e8]/15 text-[#64c7f5]"
-                : "text-[#c3cfdd] hover:text-[#64c7f5]"
+            aria-current={isSettingsPage ? "page" : undefined}
+            className={`px-3.5 py-2 rounded-full text-sm font-medium transition ${
+              isSettingsPage ? "" : "quiet text-[var(--muted)]"
             }`}
-            style={
-              isSettingsPage
-                ? { boxShadow: "inset 0 -2px 0 #1ea7e8" }
-                : undefined
-            }
+            style={{
+              background: isSettingsPage ? "var(--glass-seg-on)" : "transparent",
+              boxShadow: isSettingsPage ? "var(--ring-pill-on)" : "none",
+              color: isSettingsPage ? "var(--ink)" : "var(--muted)",
+            }}
           >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Configuración</span>
+            Configuración
           </Link>
         </nav>
 
-        {/* Derecha: botón de tema + botón Importar PDF */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={cycleTheme}
-            aria-label={`Cambiar tema (actual: ${theme})`}
-            title={`Tema actual: ${theme}`}
-            className="min-w-[44px] min-h-[44px] p-2.5 rounded-xl border flex items-center justify-center transition hover:bg-[#0e1d33]"
-            style={{ borderColor: "var(--line-strong)" }}
+          <div
+            role="radiogroup"
+            aria-label="Tema"
+            className="flex items-center gap-0.5 p-[3px] rounded-full"
+            style={{
+              background: "var(--glass-seg)",
+              boxShadow: "var(--ring-seg)",
+            }}
           >
-            {theme === "light" && <Sun className="w-4 h-4 text-[var(--accent)]" />}
-            {theme === "sepia" && <Coffee className="w-4 h-4 text-[var(--accent)]" />}
-            {theme === "dark" && <Moon className="w-4 h-4 text-[var(--accent)]" />}
-          </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={theme === "light"}
+              aria-label="Tema claro"
+              title="Tema claro"
+              onClick={() => setTheme("light")}
+              className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
+              style={{
+                background: theme === "light" ? "var(--glass-seg-on)" : "transparent",
+                boxShadow: theme === "light" ? "var(--shadow-seg-on)" : "none",
+                color: "var(--ink)",
+              }}
+            >
+              <Sun className="w-4 h-4" strokeWidth={1.7} />
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={theme === "sepia"}
+              aria-label="Tema sepia"
+              title="Tema sepia"
+              onClick={() => setTheme("sepia")}
+              className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
+              style={{
+                background: theme === "sepia" ? "var(--glass-seg-on)" : "transparent",
+                boxShadow: theme === "sepia" ? "var(--shadow-seg-on)" : "none",
+                color: "var(--ink)",
+              }}
+            >
+              <Coffee className="w-4 h-4" strokeWidth={1.7} />
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={theme === "dark"}
+              aria-label="Tema oscuro"
+              title="Tema oscuro"
+              onClick={() => setTheme("dark")}
+              className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
+              style={{
+                background: theme === "dark" ? "var(--glass-seg-on)" : "transparent",
+                boxShadow: theme === "dark" ? "var(--shadow-seg-on)" : "none",
+                color: "var(--ink)",
+              }}
+            >
+              <Moon className="w-4 h-4" strokeWidth={1.7} />
+            </button>
+          </div>
 
           {onOpenUpload && (
             <button
+              type="button"
               onClick={onOpenUpload}
-              className="min-h-[44px] flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition hover:opacity-95"
+              className="glbtn inline-flex items-center gap-2 h-10 px-4 py-0 rounded-full border-0 text-sm font-medium cursor-pointer"
               style={{
-                background: "var(--primary-btn-bg)",
-                color: "var(--primary-btn-text)",
+                background: "var(--btn-primary)",
+                boxShadow: "var(--ring-primary)",
+                color: "var(--btn-primary-ink)",
               }}
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" strokeWidth={1.8} />
               <span>Importar PDF</span>
             </button>
           )}
         </div>
-      </div>
-    </header>
+      </header>
+    </div>
   );
 }
