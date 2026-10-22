@@ -20,7 +20,11 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const GENERATED_COVER_COLORS = ["#1b2b44", "#0f3b5c", "#0b4f6c"];
+const GENERATED_COVER_COLORS = [
+  "var(--cover-bg-1)",
+  "var(--cover-bg-2)",
+  "var(--cover-bg-3)",
+];
 
 type FilterKey = "all" | "inprogress" | "notstarted";
 
@@ -266,8 +270,11 @@ export default function HomePage() {
                 <div className="flex flex-wrap gap-3 pt-1">
                   <Link
                     href={`/reader?id=${continueBook.id}`}
-                    className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-[#0a1729] transition hover:opacity-95"
-                    style={{ background: "linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%)" }}
+                    className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition hover:opacity-95"
+                    style={{
+                      background: "var(--primary-btn-bg)",
+                      color: "var(--primary-btn-text)",
+                    }}
                   >
                     <Play className="w-4 h-4 fill-current" />
                     <span>Reanudar en pág. {continueInfo.current}</span>
@@ -314,7 +321,10 @@ export default function HomePage() {
                       }`}
                       style={
                         active
-                          ? { background: "linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%)" }
+                          ? {
+                              background: "var(--primary-btn-bg)",
+                              color: "var(--primary-btn-text)",
+                            }
                           : { borderColor: "var(--line-strong)" }
                       }
                     >

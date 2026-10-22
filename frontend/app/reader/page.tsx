@@ -657,8 +657,16 @@ function ReaderContent() {
       )}
 
       {/* Barra superior de lectura */}
-      <header className="sticky top-0 z-30 border-b backdrop-blur-xl bg-white/65 dark:bg-slate-900/55 border-slate-300/60 dark:border-white/[0.08]">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+      <header
+        className="sticky top-0 z-30 border-b backdrop-blur-xl flex items-center"
+        style={{
+          paddingTop: "14px",
+          paddingBottom: "14px",
+          backgroundColor: "var(--header-bg)",
+          borderColor: "var(--line)",
+        }}
+      >
+        <div className="max-w-6xl mx-auto px-4 w-full flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Link
               href="/"
@@ -800,8 +808,8 @@ function ReaderContent() {
             </Link>
           </div>
         ) : !chapter ? (
-          <div className="flex flex-col items-center justify-center py-24 text-zinc-400 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+          <div className="flex flex-col items-center justify-center py-24 text-[#93a3b8] gap-3">
+            <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
             <span className="text-sm">Cargando capítulo...</span>
           </div>
         ) : (
@@ -855,8 +863,8 @@ function ReaderContent() {
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/75 dark:bg-slate-900/65 border-slate-300/60 dark:border-white/[0.08] shadow-2xl px-4 py-3">
         <div className="max-w-3xl mx-auto flex flex-col gap-2">
           {!audioUrl && isSynthesizing ? (
-            <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-              <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+            <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-[#64c7f5]">
+              <Loader2 className="w-4 h-4 animate-spin text-[#1ea7e8]" />
               <span>
                 Cargando voz del fragmento {Math.max(1, loadedParts)} de {TOTAL_PARTS}...
               </span>
@@ -981,9 +989,12 @@ export default function ReaderPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-zinc-400 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-          <span className="text-sm">Cargando lector...</span>
+        <div
+          className="min-h-screen flex items-center justify-center gap-3"
+          style={{ backgroundColor: "var(--bg)", color: "var(--muted)" }}
+        >
+          <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
+          <span className="text-sm text-[#93a3b8]">Cargando lector...</span>
         </div>
       }
     >

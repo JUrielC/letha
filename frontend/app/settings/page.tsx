@@ -22,7 +22,7 @@ interface OptionDef<T> {
   example?: React.ReactNode;
 }
 
-const HIGHLIGHT = "rgba(30,167,232,0.22)";
+const HIGHLIGHT = "var(--read-highlight)";
 
 function OptionGrid<T extends string | boolean>({
   name,
@@ -55,21 +55,22 @@ function OptionGrid<T extends string | boolean>({
           borderLeft: "1px solid var(--line)",
         }}
       >
-        {options.map((opt) => {
+        {options.map((opt, idx) => {
           const selected = opt.value === value;
           const id = `${name}-${String(opt.value)}`;
           return (
             <label
               key={id}
               htmlFor={id}
-              className={`flex gap-3 p-6 cursor-pointer transition-colors ${
+              className={`animate-rise-gradient flex gap-3 p-6 cursor-pointer transition-colors ${
                 selected ? "" : "hover:bg-[#0e1d33]/60"
               }`}
               style={{
+                animationDelay: `${idx * 80}ms`,
                 borderRight: "1px solid var(--line)",
                 borderBottom: "1px solid var(--line)",
                 backgroundColor: selected ? "var(--panel)" : "transparent",
-                boxShadow: selected ? "inset 0 2px 0 #1ea7e8" : "none",
+                boxShadow: selected ? "inset 0 2px 0 var(--accent)" : "none",
               }}
             >
               <input
@@ -79,7 +80,7 @@ function OptionGrid<T extends string | boolean>({
                 checked={selected}
                 onChange={() => onChange(opt.value)}
                 className="mt-1 w-4 h-4 shrink-0 cursor-pointer"
-                style={{ accentColor: "#1ea7e8" }}
+                style={{ accentColor: "var(--accent)" }}
               />
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -275,7 +276,10 @@ function SettingsContent() {
     },
   ];
 
-  const presetActiveStyle = { background: "linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%)" };
+  const presetActiveStyle = {
+    background: "var(--primary-btn-bg)",
+    color: "var(--primary-btn-text)",
+  };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--bg)" }}>
@@ -416,8 +420,12 @@ function SettingsContent() {
               </div>
 
               <div
-                className="flex flex-wrap items-center justify-between gap-4 p-6 rounded-2xl border"
-                style={{ backgroundColor: "var(--panel)", borderColor: "var(--line)" }}
+                className="animate-rise-gradient flex flex-wrap items-center justify-between gap-4 p-6 rounded-2xl border"
+                style={{
+                  backgroundColor: "var(--panel)",
+                  borderColor: "var(--line)",
+                  animationDelay: "160ms",
+                }}
               >
                 <div>
                   <p className="text-sm font-semibold text-[#eaf1fa]">Escucha una muestra</p>

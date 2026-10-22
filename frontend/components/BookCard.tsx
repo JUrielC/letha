@@ -5,7 +5,11 @@ import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
 import { Play, Trash2 } from "lucide-react";
 
-const GENERATED_COVER_COLORS = ["#1b2b44", "#0f3b5c", "#0b4f6c"];
+const GENERATED_COVER_COLORS = [
+  "var(--cover-bg-1)",
+  "var(--cover-bg-2)",
+  "var(--cover-bg-3)",
+];
 
 function pickCoverBg(id: string): string {
   let sum = 0;
@@ -99,9 +103,10 @@ export function BookCard({
         <Link
           href={`/reader?id=${book.id}`}
           aria-label={`Abrir y leer ${book.title}`}
-          className="absolute bottom-3 right-3 w-[52px] h-[52px] rounded-full flex items-center justify-center text-[#0a1729] transition hover:opacity-95"
+          className="absolute bottom-3 right-3 w-[52px] h-[52px] rounded-full flex items-center justify-center transition hover:opacity-95"
           style={{
-            background: "linear-gradient(135deg, #1ea7e8 0%, #64c7f5 100%)",
+            background: "var(--primary-btn-bg)",
+            color: "var(--primary-btn-text)",
           }}
         >
           <Play className="w-5 h-5 fill-current ml-0.5" />

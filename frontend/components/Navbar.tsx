@@ -39,14 +39,15 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
 
   return (
     <header
-      className="sticky top-0 z-30 border-b backdrop-blur-xl"
+      className="sticky top-0 z-30 border-b backdrop-blur-xl flex items-center"
       style={{
-        height: "68px",
-        backgroundColor: "rgba(10, 23, 41, 0.88)",
+        paddingTop: "16px",
+        paddingBottom: "16px",
+        backgroundColor: "var(--header-bg)",
         borderColor: "var(--line)",
       }}
     >
-      <div className="max-w-[1320px] mx-auto px-[28px] h-full flex items-center justify-between gap-4">
+      <div className="max-w-[1320px] mx-auto px-[28px] w-full flex items-center justify-between gap-4">
         {/* Izquierda: logo + Letha */}
         <Link href="/" className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-[#eaf1fa]">
           <div
@@ -61,7 +62,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
         </Link>
 
         {/* Centro: nav */}
-        <nav className="flex items-center gap-2 h-full" aria-label="Navegación principal">
+        <nav className="flex items-center gap-2" aria-label="Navegación principal">
           <Link
             href="/"
             className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
@@ -106,17 +107,18 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
             className="min-w-[44px] min-h-[44px] p-2.5 rounded-xl border flex items-center justify-center transition hover:bg-[#0e1d33]"
             style={{ borderColor: "var(--line-strong)" }}
           >
-            {theme === "light" && <Sun className="w-4 h-4 text-[#64c7f5]" />}
-            {theme === "sepia" && <Coffee className="w-4 h-4 text-[#64c7f5]" />}
-            {theme === "dark" && <Moon className="w-4 h-4 text-[#64c7f5]" />}
+            {theme === "light" && <Sun className="w-4 h-4 text-[var(--accent)]" />}
+            {theme === "sepia" && <Coffee className="w-4 h-4 text-[var(--accent)]" />}
+            {theme === "dark" && <Moon className="w-4 h-4 text-[var(--accent)]" />}
           </button>
 
           {onOpenUpload && (
             <button
               onClick={onOpenUpload}
-              className="min-h-[44px] flex items-center gap-2 px-4 py-2 text-[#0a1729] text-sm font-semibold rounded-xl transition hover:opacity-95"
+              className="min-h-[44px] flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition hover:opacity-95"
               style={{
-                background: "linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%)",
+                background: "var(--primary-btn-bg)",
+                color: "var(--primary-btn-text)",
               }}
             >
               <Plus className="w-4 h-4" />

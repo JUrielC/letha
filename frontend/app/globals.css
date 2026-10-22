@@ -2,9 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* Modo Oscuro por defecto (#0a1729) */
+:root,
+body.theme-dark {
   --bg: #0a1729;
   --panel: #0e1d33;
+  --header-bg: rgba(10, 23, 41, 0.88);
   --line: rgba(234, 241, 250, 0.12);
   --line-strong: rgba(234, 241, 250, 0.24);
   --text: #eaf1fa;
@@ -13,6 +16,61 @@
   --accent: #1ea7e8;
   --accent-soft: #64c7f5;
   --read-highlight: rgba(30, 167, 232, 0.22);
+  --cover-bg-1: #1b2b44;
+  --cover-bg-2: #0f3b5c;
+  --cover-bg-3: #0b4f6c;
+  --card-hover: #0e1d33;
+  --primary-btn-bg: linear-gradient(90deg, #1ea7e8 0%, #64c7f5 100%);
+  --primary-btn-text: #0a1729;
+
+  --background: var(--bg);
+  --foreground: var(--text);
+}
+
+/* Modo Claro (cuando NO tiene theme-dark ni theme-sepia) */
+body:not(.theme-dark):not(.theme-sepia),
+html:not(.dark) body:not(.theme-sepia) {
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --header-bg: rgba(248, 250, 252, 0.92);
+  --line: rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.16);
+  --text: #0f172a;
+  --text-2: #334155;
+  --muted: #64748b;
+  --accent: #0284c7;
+  --accent-soft: #0369a1;
+  --read-highlight: rgba(2, 132, 199, 0.16);
+  --cover-bg-1: #e2e8f0;
+  --cover-bg-2: #e0f2fe;
+  --cover-bg-3: #bae6fd;
+  --card-hover: #f1f5f9;
+  --primary-btn-bg: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+  --primary-btn-text: #ffffff;
+
+  --background: var(--bg);
+  --foreground: var(--text);
+}
+
+/* Modo Sepia */
+body.theme-sepia {
+  --bg: #f5eedf;
+  --panel: #ebdcc7;
+  --header-bg: rgba(245, 238, 223, 0.92);
+  --line: rgba(60, 51, 40, 0.12);
+  --line-strong: rgba(60, 51, 40, 0.22);
+  --text: #3c3328;
+  --text-2: #5c4e3c;
+  --muted: #7c6d58;
+  --accent: #b45309;
+  --accent-soft: #92400e;
+  --read-highlight: rgba(238, 208, 139, 0.45);
+  --cover-bg-1: #e4d7bf;
+  --cover-bg-2: #dfceb0;
+  --cover-bg-3: #d6be95;
+  --card-hover: #e2d1ba;
+  --primary-btn-bg: linear-gradient(90deg, #b45309 0%, #d97706 100%);
+  --primary-btn-text: #ffffff;
 
   --background: var(--bg);
   --foreground: var(--text);
@@ -25,25 +83,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Modo Claro */
-body:not(.theme-dark):not(.theme-sepia) {
-  --bg: #0a1729;
-  --panel: #0e1d33;
-  color: var(--text);
-  background-color: var(--bg);
-}
-
-/* Modo Sepia */
-body.theme-sepia {
-  background-color: #f6efe2;
-  color: #3c3328;
-}
-
-/* Modo Oscuro por defecto (#0a1729) */
-body.theme-dark {
-  background-color: var(--bg);
-  color: var(--text);
-}
+/* Clases adaptables al tema activo */
+.text-\[\#eaf1fa\] { color: var(--text) !important; }
+.text-\[\#c3cfdd\] { color: var(--text-2) !important; }
+.text-\[\#93a3b8\] { color: var(--muted) !important; }
+.bg-\[\#0a1729\] { background-color: var(--bg) !important; }
+.bg-\[\#0e1d33\] { background-color: var(--panel) !important; }
+.hover\:bg-\[\#0e1d33\]:hover { background-color: var(--card-hover) !important; }
+.hover\:bg-\[\#0a1729\]:hover { background-color: var(--card-hover) !important; }
+.hover\:text-\[\#64c7f5\]:hover { color: var(--accent-soft) !important; }
 
 /* Transición suave para el texto resaltado */
 .sentence-item {
@@ -52,15 +100,19 @@ body.theme-dark {
   padding: 2px 4px;
 }
 
-.sentence-active-light,
-.sentence-active-dark {
-  background-color: rgba(30, 167, 232, 0.22);
-  color: #eaf1fa;
+.sentence-active-light {
+  background-color: rgba(2, 132, 199, 0.18);
+  color: #0f172a;
 }
 
 .sentence-active-sepia {
   background-color: #eed08b;
   color: #27211a;
+}
+
+.sentence-active-dark {
+  background-color: rgba(30, 167, 232, 0.22);
+  color: #eaf1fa;
 }
 
 /* Slider personalizado: track 2px --line-strong y thumb circular --accent de 20px */

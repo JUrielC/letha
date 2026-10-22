@@ -123,44 +123,68 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-xl relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in">
+      <div
+        className="w-full max-w-md p-6 rounded-2xl border relative animate-in fade-in zoom-in-95"
+        style={{
+          backgroundColor: "var(--panel)",
+          borderColor: "var(--line-strong)",
+        }}
+      >
         <button
           onClick={onClose}
           disabled={loading}
-          className="absolute top-4 right-4 p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
+          aria-label="Cerrar modal"
+          className="absolute top-4 right-4 min-w-[44px] min-h-[44px] p-2 rounded-xl flex items-center justify-center text-[#93a3b8] hover:text-[#eaf1fa] hover:bg-[#0a1729] transition"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <h3 className="text-lg font-bold mb-1">Importar libro en PDF</h3>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+        <h3 className="text-lg font-bold text-[#eaf1fa] mb-1">Importar libro en PDF</h3>
+        <p className="text-sm text-[#93a3b8] mb-4">
           Selecciona tu PDF y elige la persona que narrará el libro.
         </p>
 
         {/* Selector de Persona / Narrador antes de cargar el libro */}
-        <div className="mb-4 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
-              <User className="w-3.5 h-3.5 text-amber-500" />
+        <div
+          className="mb-4 p-4 rounded-xl border"
+          style={{
+            backgroundColor: "var(--bg)",
+            borderColor: "var(--line)",
+          }}
+        >
+          <div className="flex items-center justify-between mb-2.5">
+            <label className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa]">
+              <User className="w-3.5 h-3.5 text-[#1ea7e8]" />
               <span>Persona que habla (Narrador)</span>
             </label>
 
             <div className="flex items-center gap-1 text-[11px]">
-              {(["es", "en", "all"] as const).map((lf) => (
-                <button
-                  key={lf}
-                  type="button"
-                  onClick={() => setLangFilter(lf)}
-                  className={`px-2 py-0.5 rounded-md font-medium transition ${
-                    langFilter === lf
-                      ? "bg-amber-500 text-white"
-                      : "text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  }`}
-                >
-                  {lf === "es" ? "Español" : lf === "en" ? "Inglés" : "Todos"}
-                </button>
-              ))}
+              {(["es", "en", "all"] as const).map((lf) => {
+                const active = langFilter === lf;
+                return (
+                  <button
+                    key={lf}
+                    type="button"
+                    onClick={() => setLangFilter(lf)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
+                      active
+                        ? "text-[#0a1729]"
+                        : "text-[#93a3b8] hover:text-[#64c7f5]"
+                    }`}
+                    style={
+                      active
+                        ? {
+                            background: "var(--primary-btn-bg)",
+                            color: "var(--primary-btn-text)",
+                          }
+                        : undefined
+                    }
+                  >
+                    {lf === "es" ? "Español" : lf === "en" ? "Inglés" : "Todos"}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -169,10 +193,15 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
               value={selectedVoice}
               onChange={(e) => setSelectedVoice(e.target.value)}
               disabled={loading}
-              className="flex-1 text-xs font-medium bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer truncate"
+              className="flex-1 min-h-[44px] text-xs font-medium rounded-xl px-3 py-2 border bg-[#0e1d33] text-[#eaf1fa] focus:outline-none focus:border-[#1ea7e8] cursor-pointer truncate"
+              style={{ borderColor: "var(--line-strong)" }}
             >
               {filteredVoices.map((v) => (
-                <option key={v.short_name} value={v.short_name}>
+                <option
+                  key={v.short_name}
+                  value={v.short_name}
+                  className="bg-[#0e1d33] text-[#eaf1fa]"
+                >
                   {v.friendly_name}
                 </option>
               ))}
@@ -182,11 +211,12 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
               type="button"
               onClick={handlePreviewVoice}
               disabled={previewing || loading}
-              className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 disabled:opacity-50 transition shrink-0"
+              className="min-h-[44px] flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border text-[#64c7f5] hover:bg-[#0a1729] disabled:opacity-50 transition shrink-0"
+              style={{ borderColor: "var(--line-strong)" }}
               title="Escuchar voz de esta persona"
             >
               {previewing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1ea7e8]" />
               ) : (
                 <Volume2 className="w-3.5 h-3.5" />
               )}
@@ -201,10 +231,12 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
           onDrop={handleDrop}
           onClick={() => !loading && inputRef.current?.click()}
           className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${
-            isDragging
-              ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20"
-              : "border-zinc-300 dark:border-zinc-700 hover:border-amber-400"
-          } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+            loading ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+          style={{
+            backgroundColor: "var(--bg)",
+            borderColor: isDragging ? "var(--accent)" : "var(--line-strong)",
+          }}
         >
           <input
             ref={inputRef}
@@ -216,39 +248,51 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
 
           {file ? (
             <div className="flex flex-col items-center gap-2 text-center">
-              <FileText className="w-10 h-10 text-amber-500" />
-              <span className="font-medium text-sm truncate max-w-xs">{file.name}</span>
-              <span className="text-xs text-zinc-400">
+              <FileText className="w-10 h-10 text-[#64c7f5]" />
+              <span className="font-semibold text-sm text-[#eaf1fa] truncate max-w-xs">
+                {file.name}
+              </span>
+              <span className="text-xs text-[#93a3b8]">
                 {(file.size / (1024 * 1024)).toFixed(2)} MB
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 text-center">
-              <UploadCloud className="w-10 h-10 text-zinc-400" />
-              <span className="text-sm font-medium">
+              <UploadCloud className="w-10 h-10 text-[#64c7f5]" />
+              <span className="text-sm font-semibold text-[#eaf1fa]">
                 Arrastra tu PDF aquí o haz clic para explorar
               </span>
-              <span className="text-xs text-zinc-400">Archivos .pdf</span>
+              <span className="text-xs text-[#93a3b8]">Archivos .pdf</span>
             </div>
           )}
         </div>
 
         {error && (
-          <p className="text-sm text-red-500 mt-3 font-medium">{error}</p>
+          <p
+            role="alert"
+            className="text-xs font-medium text-red-300 border border-red-400/30 rounded-xl px-3 py-2 mt-3"
+          >
+            {error}
+          </p>
         )}
 
         <div className="mt-6 flex gap-3 justify-end">
           <button
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            className="min-h-[44px] px-4 py-2 text-sm font-semibold rounded-xl border text-[#c3cfdd] hover:bg-[#0a1729] transition"
+            style={{ borderColor: "var(--line-strong)" }}
           >
             Cancelar
           </button>
           <button
             onClick={handleUpload}
             disabled={!file || loading}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white transition shadow-sm"
+            className="min-h-[44px] flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition hover:opacity-95"
+            style={{
+              background: "var(--primary-btn-bg)",
+              color: "var(--primary-btn-text)",
+            }}
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             <span>{loading ? "Analizando PDF..." : "Importar"}</span>
