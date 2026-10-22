@@ -21,8 +21,10 @@ Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus l
 Abre la app **Terminal** (⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.sh | sh
+curl -fsSL https://github.com/JUrielC/letha/releases/latest/download/install.sh | sh
 ```
+
+La URL `releases/latest` siempre apunta a la versión más reciente publicada en [Releases](https://github.com/JUrielC/letha/releases), así que el mismo comando instala siempre la última versión.
 
 Cuando termine, Letha queda en tu carpeta de **Aplicaciones**: ábrelo con Spotlight (⌘ + espacio, "Letha") o con doble clic.
 
@@ -84,7 +86,12 @@ Para generar el paquete multiplataforma empaquetado (Next.js compilado + ventana
 ```bash
 ./scripts/build-release.sh
 ```
-El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows).
+El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows), junto a una copia de `install.sh`.
+
+Para publicarlo, sube **ambos** archivos al release: el comando de instalación descarga `install.sh` desde `releases/latest/download/`, así que un release sin él rompe la instalación.
+```bash
+gh release create v<versión> dist/* --title "Letha <versión>" --latest
+```
 
 ---
 

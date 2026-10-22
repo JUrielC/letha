@@ -1,7 +1,7 @@
 #!/bin/sh
 # Instala Letha en una Mac con Apple Silicon:
 #
-#   curl -fsSL https://raw.githubusercontent.com/JUrielC/letha/master/scripts/install.sh | sh
+#   curl -fsSL https://github.com/JUrielC/letha/releases/latest/download/install.sh | sh
 #
 set -eu
 
