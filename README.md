@@ -7,11 +7,10 @@ Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus l
 ## Características
 
 - **Extracción limpia de PDFs:** Usa `PyMuPDF` para estructurar páginas, detectar la tabla de contenidos (TOC) y filtrar encabezados y números de página que arruinarían la lectura de voz.
-- **Voces Neurales Gratuitas:** Integración con `edge-tts` (el mismo motor utilizado en `pyvideotrans`), con decenas de voces humanas de alta fidelidad en español (México, España, Argentina, etc.) y otros idiomas.
+- **Voces Neurales Gratuitas:** Integración con `edge-tts`, con decenas de voces humanas de alta fidelidad en inglés, español y otros idiomas.
 - **Efecto Karaoke (Sincronización exacta):** Captura eventos de `SentenceBoundary` para sincronizar y resaltar la frase que se está reproduciendo en cada milisegundo con auto-desplazamiento suave.
 - **Navegación Interactiva:** Haz clic en cualquier oración del texto para saltar la reproducción inmediatamente a ese punto exacto.
 - **Experiencia de Lectura:** Modos **Claro**, **Sepia cálido** y **Oscuro**, tamaños de tipografía ajustables y control de velocidad de reproducción (0.75x a 2.0x).
-- **100% Local y Privado:** Sin costos de servidores en la nube. Tus libros y audios generados se guardan localmente en tu disco.
 
 ---
 

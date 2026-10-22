@@ -1,5 +1,5 @@
 """
-Síntesis de voz y extracción de marcas de tiempo con edge-tts para Letha
+Síntesis de voz y extracción de marcas de tiempo con edge-tts (en línea) o Kokoro (local) para Letha
 (aprendizaje de idiomas y mejora de pronunciación mediante lectura sincronizada en contexto).
 Soporta carga progresiva dividiendo cada página en 5 solicitudes basadas en oraciones completas.
 """
@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import edge_tts
 
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
+from letha.services import kokoro_engine
+from letha.services.pdf import split_sentences
 
 # edge-tts genera audio MP3 CBR a 24kHz 48kbps mono = 6000 bytes por segundo exactos
 BYTES_PER_SECOND = 6000.0
@@ -59,45 +61,74 @@ LOCALE_LABELS = {
 
 
 def _extract_persona_name(short_name: str) -> str:
+    if kokoro_engine.is_kokoro_voice(short_name):
+        return kokoro_engine.persona_name(short_name)
     parts = short_name.split("-")
     raw = parts[2] if len(parts) >= 3 else short_name
     raw = re.sub(r"(Multilingual)?Neural$", "", raw)
     return raw or short_name
 
 
+def voice_locale(voice: str) -> str:
+    if kokoro_engine.is_kokoro_voice(voice):
+        return kokoro_engine.voice_locale(voice)
+    return "-".join(voice.split("-")[:2])
+
+
+def _format_voice(short_name: str, locale: str, gender: str, engine_label: str = "") -> Dict[str, str]:
+    persona = _extract_persona_name(short_name)
+    lang_label = LOCALE_LABELS.get(locale, locale)
+    gender_label = "Mujer" if gender == "Female" else "Hombre" if gender == "Male" else gender
+    return {
+        "name": persona,
+        "short_name": short_name,
+        "gender": gender,
+        "locale": locale,
+        "friendly_name": f"{persona} — {lang_label} · {gender_label}{engine_label}",
+    }
+
+
 async def list_available_voices() -> List[Dict[str, str]]:
     """
-    Lista las voces neurales de edge-tts con nombres legibles de persona, idioma y género.
+    Lista las voces locales de Kokoro (si está instalado) y las voces neurales de edge-tts
+    con nombres legibles de persona, idioma y género.
     """
-    voices = await edge_tts.list_voices()
     formatted = []
-    for v in voices:
-        short_name = v.get("ShortName", "")
-        locale = v.get("Locale", "")
-        gender = v.get("Gender", "")
-        persona = _extract_persona_name(short_name)
-        lang_label = LOCALE_LABELS.get(locale, locale)
-        gender_label = "Mujer" if gender == "Female" else "Hombre" if gender == "Male" else gender
-        friendly_name = f"{persona} — {lang_label} · {gender_label}"
-        formatted.append(
-            {
-                "name": persona,
-                "short_name": short_name,
-                "gender": gender,
-                "locale": locale,
-                "friendly_name": friendly_name,
-            }
-        )
+    if kokoro_engine.is_available():
+        formatted = [
+            _format_voice(
+                v,
+                kokoro_engine.voice_locale(v),
+                kokoro_engine.voice_gender(v),
+                " · Kokoro (local)",
+            )
+            for v in kokoro_engine.list_voices()
+        ]
+
+    try:
+        edge_voices = await edge_tts.list_voices()
+    except Exception:
+        if not formatted:
+            raise
+        edge_voices = []
+
+    formatted.extend(
+        _format_voice(v.get("ShortName", ""), v.get("Locale", ""), v.get("Gender", ""))
+        for v in edge_voices
+    )
 
     def sort_key(item: Dict[str, str]):
         loc = item["locale"].lower()
+        engine_rank = 0 if kokoro_engine.is_kokoro_voice(item["short_name"]) else 1
         if loc.startswith("es-mx"):
-            return (0, loc, item["name"])
+            group = 0
         elif loc.startswith("es-"):
-            return (1, loc, item["name"])
+            group = 1
         elif loc.startswith("en-"):
-            return (2, loc, item["name"])
-        return (3, loc, item["name"])
+            group = 2
+        else:
+            group = 3
+        return (group, engine_rank, loc, item["name"])
 
     formatted.sort(key=sort_key)
     return formatted
@@ -137,10 +168,15 @@ async def synthesize_sentence_group(
     speed: float = 1.0,
 ) -> Tuple[bytes, float, List[Tuple[float, float]]]:
     """
-    Sintetiza un grupo de oraciones completas en una sola solicitud a edge-tts y
-    devuelve (audio_bytes, duration_seconds, [(start, end), ...]) alineado 1 a 1
+    Sintetiza un grupo de oraciones completas en una sola solicitud a edge-tts (o localmente
+    con Kokoro) y devuelve (audio_bytes, duration_seconds, [(start, end), ...]) alineado 1 a 1
     con `sentence_texts`.
     """
+    if kokoro_engine.is_kokoro_voice(voice):
+        return await asyncio.to_thread(
+            kokoro_engine.synthesize_sentences, sentence_texts, voice, speed
+        )
+
     clean_texts = [s.strip() for s in sentence_texts if s.strip()]
     if not clean_texts:
         return b"", 0.0, [(0.0, 0.0) for _ in sentence_texts]
@@ -268,6 +304,18 @@ async def synthesize_text_to_audio(
     if not text.strip():
         return 0.0, []
 
+    if kokoro_engine.is_kokoro_voice(voice):
+        sentence_texts = split_sentences(text)
+        audio_bytes, total_duration, timings = await synthesize_sentence_group(
+            sentence_texts, voice, speed
+        )
+        sentences_alignment = [
+            {"index": i, "text": sentence, "start": start, "end": end}
+            for i, (sentence, (start, end)) in enumerate(zip(sentence_texts, timings, strict=True))
+        ]
+        _write_outputs(audio_bytes, sentences_alignment, output_audio_path, output_alignment_path)
+        return total_duration, sentences_alignment
+
     rate_str = format_rate(speed)
     chunks = _split_text_into_chunks(text, MAX_CHUNK_CHARS)
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
@@ -296,18 +344,26 @@ async def synthesize_text_to_audio(
         chunk_duration = len(chunk_audio) / BYTES_PER_SECOND
         time_offset += chunk_duration
 
-    if output_audio_path is not None:
-        output_audio_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_audio_path, "wb") as f:
-            f.write(total_audio_bytes)
-
     total_duration = round(time_offset, 3)
     if sentences_alignment and sentences_alignment[-1]["end"] > total_duration:
         total_duration = sentences_alignment[-1]["end"]
+
+    _write_outputs(total_audio_bytes, sentences_alignment, output_audio_path, output_alignment_path)
+    return total_duration, sentences_alignment
+
+
+def _write_outputs(
+    audio_bytes: bytes,
+    sentences_alignment: List[Dict[str, Any]],
+    output_audio_path: Optional[Path],
+    output_alignment_path: Optional[Path],
+) -> None:
+    if output_audio_path is not None:
+        output_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_audio_path, "wb") as f:
+            f.write(audio_bytes)
 
     if output_alignment_path is not None:
         output_alignment_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_alignment_path, "w", encoding="utf-8") as f:
             json.dump(sentences_alignment, f, ensure_ascii=False, indent=2)
-
-    return total_duration, sentences_alignment

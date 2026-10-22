@@ -113,7 +113,7 @@ async def preview_voice(voice: str = DEFAULT_VOICE):
         persona = tts_service._extract_persona_name(voice)
         sample_text = (
             f"Hello, I am {persona}. I will read this book for you."
-            if voice.lower().startswith("en-")
+            if tts_service.voice_locale(voice).lower().startswith("en-")
             else f"Hola, soy {persona}. Te acompañaré en la lectura de este libro."
         )
         _active_jobs += 1
