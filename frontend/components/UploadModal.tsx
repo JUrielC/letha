@@ -1,18 +1,29 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, X, Loader2, FileText, Volume2, User, Languages } from "lucide-react";
+import { UploadCloud, X, Loader2, FileText, Check, Play, Pause } from "lucide-react";
 import { api, VoiceItem } from "@/lib/api";
 
 const LANGUAGES = [
   { code: "es", label: "Español", defaultVoice: "es-MX-DaliaNeural" },
-  { code: "en", label: "Inglés", defaultVoice: "en-US-AvaNeural" },
-  { code: "fr", label: "Francés", defaultVoice: "fr-FR-DeniseNeural" },
+  { code: "en", label: "English", defaultVoice: "en-US-AvaNeural" },
+  { code: "fr", label: "Français", defaultVoice: "fr-FR-DeniseNeural" },
   { code: "it", label: "Italiano", defaultVoice: "it-IT-ElsaNeural" },
-  { code: "pt", label: "Portugués", defaultVoice: "pt-BR-FranciscaNeural" },
+  { code: "pt", label: "Português", defaultVoice: "pt-BR-FranciscaNeural" },
 ] as const;
 
 type LanguageCode = (typeof LANGUAGES)[number]["code"];
+
+function extractPersona(friendlyName?: string, shortName?: string): string {
+  if (friendlyName) {
+    const parts = friendlyName.split(/\s*[-—]\s*/);
+    if (parts[0]) return parts[0].trim();
+  }
+  if (!shortName) return "Narrador";
+  const parts = shortName.split("-");
+  const last = parts[parts.length - 1] || "";
+  return last.replace("Neural", "");
+}
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -26,7 +37,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [langFilter, setLangFilter] = useState<LanguageCode>("es");
   const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
-  const [previewing, setPreviewing] = useState(false);
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -58,6 +69,13 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
       );
     }
   }, [langFilter, voices]);
+
+  useEffect(() => {
+    if (!isOpen && previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      setPreviewingVoice(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -96,20 +114,27 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
     }
   };
 
-  const handlePreviewVoice = async () => {
-    if (!selectedVoice || previewing) return;
-    setPreviewing(true);
+  const handlePreviewVoice = async (voiceTarget?: string) => {
+    const v = voiceTarget || selectedVoice;
+    if (!v) return;
+    if (previewingVoice === v) {
+      if (previewAudioRef.current) previewAudioRef.current.pause();
+      setPreviewingVoice(null);
+      return;
+    }
+    setSelectedVoice(v);
+    setPreviewingVoice(v);
     try {
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
       }
-      const audio = new Audio(api.getVoicePreviewUrl(selectedVoice));
+      const audio = new Audio(api.getVoicePreviewUrl(v));
       previewAudioRef.current = audio;
-      audio.onended = () => setPreviewing(false);
-      audio.onerror = () => setPreviewing(false);
+      audio.onended = () => setPreviewingVoice(null);
+      audio.onerror = () => setPreviewingVoice(null);
       await audio.play();
     } catch {
-      setPreviewing(false);
+      setPreviewingVoice(null);
     }
   };
 
@@ -132,184 +157,308 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
       setLoading(false);
     }
   };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="upload-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+      style={{
+        background: "var(--scrim)",
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
+      }}
+    >
       <div
-        className="w-full max-w-md p-6 rounded-2xl border relative animate-in fade-in zoom-in-95"
+        className="glass-strong relative w-full max-w-[600px] p-7 rounded-[30px] flex flex-col gap-[26px] my-auto box-border"
         style={{
-          backgroundColor: "var(--panel)",
-          borderColor: "var(--line-strong)",
+          background: "var(--dialog)",
+          boxShadow: "var(--ring-dialog)",
         }}
       >
-        <button
-          onClick={onClose}
-          disabled={loading}
-          aria-label="Cerrar modal"
-          className="absolute top-4 right-4 min-w-[44px] min-h-[44px] p-2 rounded-xl flex items-center justify-center text-[#93a3b8] hover:text-[#eaf1fa] hover:bg-[#0a1729] transition"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* 1. Título y cerrar */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h2
+              id="upload-modal-title"
+              className="m-0 font-serif text-[28px] leading-[1.2] font-normal"
+              style={{ color: "var(--ink)" }}
+            >
+              Importar un libro
+            </h2>
+            <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
+              Letha saca el texto del PDF, lee su índice y prepara la voz página por página.
+            </p>
+          </div>
 
-        <h3 className="text-lg font-bold text-[#eaf1fa] mb-1">Importar libro en PDF</h3>
-        <p className="text-sm text-[#93a3b8] mb-4">
-          Selecciona tu PDF, el idioma del libro y la persona que lo narrará.
-        </p>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Cerrar"
+            className="quiet shrink-0 w-10 h-10 -mr-1.5 -mt-1 rounded-full flex items-center justify-center border-0 cursor-pointer"
+            style={{
+              background: "var(--btn-ghost)",
+              color: "var(--muted)",
+            }}
+          >
+            <X className="w-[18px] h-[18px]" strokeWidth={1.6} />
+          </button>
+        </div>
 
-        {/* Selector de idioma y narrador antes de cargar el libro */}
-        <div
-          className="mb-4 p-4 rounded-xl border"
-          style={{
-            backgroundColor: "var(--bg)",
-            borderColor: "var(--line)",
-          }}
-        >
-          <p className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa] mb-2">
-            <Languages className="w-3.5 h-3.5 text-[#1ea7e8]" />
-            <span>Idioma del libro</span>
+        {/* 2. Zona de Archivo */}
+        {file ? (
+          <div
+            className="flex items-center gap-3.5 p-3 pl-3 rounded-[22px]"
+            style={{
+              background: "var(--glass-sub)",
+              boxShadow: "var(--ring-sub)",
+            }}
+          >
+            <span
+              aria-hidden="true"
+              className="w-[34px] h-[46px] rounded-[4px] flex items-center justify-center shrink-0"
+              style={{
+                background:
+                  "linear-gradient(155deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0) 40%), #7a959f",
+                boxShadow: "0 6px 14px rgba(20, 18, 24, 0.2)",
+                color: "#ffffff",
+              }}
+            >
+              <FileText className="w-4 h-4 opacity-80" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="m-0 text-sm font-medium truncate" style={{ color: "var(--ink)" }}>
+                {file.name}
+              </p>
+              <p className="m-0 text-xs tabular-nums" style={{ color: "var(--muted)" }}>
+                {(file.size / (1024 * 1024)).toFixed(2)} MB
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => !loading && inputRef.current?.click()}
+              className="quiet h-9 px-3 rounded-full border-0 text-[13px] font-medium cursor-pointer"
+              style={{ color: "var(--ink)" }}
+            >
+              Cambiar archivo
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+        ) : (
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => !loading && inputRef.current?.click()}
+            className="glbtn rounded-[22px] p-7 flex flex-col items-center justify-center cursor-pointer transition select-none text-center"
+            style={{
+              border: "1.5px dashed var(--add-border)",
+              background: isDragging ? "var(--hover)" : "var(--add)",
+              color: "var(--soft)",
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <UploadCloud className="w-9 h-9 mb-2" strokeWidth={1.5} style={{ color: "var(--soft)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+              Arrastra tu PDF aquí o haz clic para explorar
+            </span>
+            <span className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+              Archivos .pdf
+            </span>
+          </div>
+        )}
+
+        {/* 3. Idioma del libro */}
+        <fieldset className="m-0 p-0 border-0 min-w-0">
+          <legend className="p-0 text-sm font-medium mb-0.5" style={{ color: "var(--ink)" }}>
+            Idioma del libro
+          </legend>
+          <p className="m-0 mb-3 text-[13px]" style={{ color: "var(--muted)" }}>
+            Las voces de este libro se limitan a su idioma.
           </p>
-
-          <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Idioma del libro">
+          <div
+            role="radiogroup"
+            aria-label="Idioma del libro"
+            className="flex flex-wrap gap-0.5 p-1 rounded-full w-fit max-w-full"
+            style={{
+              background: "var(--glass-seg)",
+              boxShadow: "var(--ring-seg)",
+            }}
+          >
             {LANGUAGES.map(({ code, label }) => {
               const active = langFilter === code;
               return (
                 <button
                   key={code}
                   type="button"
+                  role="radio"
+                  aria-checked={active}
                   onClick={() => setLangFilter(code)}
-                  aria-pressed={active}
-                  className={`px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
-                    active
-                      ? "text-[#0a1729]"
-                      : "text-[#93a3b8] hover:text-[#64c7f5]"
-                  }`}
-                  style={
-                    active
-                      ? {
-                          background: "var(--primary-btn-bg)",
-                          color: "var(--primary-btn-text)",
-                        }
-                      : undefined
-                  }
+                  className="quiet h-9 px-3.5 rounded-full border-0 text-sm cursor-pointer transition"
+                  style={{
+                    background: active ? "var(--glass-seg-on)" : "transparent",
+                    boxShadow: active ? "var(--shadow-seg-on)" : "none",
+                    color: active ? "var(--ink)" : "var(--soft)",
+                    fontWeight: active ? 500 : 400,
+                  }}
                 >
                   {label}
                 </button>
               );
             })}
           </div>
+        </fieldset>
 
-          <label className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa] mb-2.5">
-            <User className="w-3.5 h-3.5 text-[#1ea7e8]" />
-            <span>Persona que habla (Narrador)</span>
-          </label>
+        {/* 4. Narrador */}
+        <fieldset className="m-0 p-0 border-0 min-w-0">
+          <legend className="p-0 text-sm font-medium mb-0.5" style={{ color: "var(--ink)" }}>
+            Narrador
+          </legend>
+          <p className="m-0 mb-3 text-[13px]" style={{ color: "var(--muted)" }}>
+            Escucha una frase antes de elegir. Puedes cambiarlo luego desde el lector.
+          </p>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedVoice}
-              onChange={(e) => setSelectedVoice(e.target.value)}
-              disabled={loading}
-              className="flex-1 min-h-[44px] text-xs font-medium rounded-xl px-3 py-2 border bg-[#0e1d33] text-[#eaf1fa] focus:outline-none focus:border-[#1ea7e8] cursor-pointer truncate"
-              style={{ borderColor: "var(--line-strong)" }}
-            >
-              {filteredVoices.map((v) => (
-                <option
+          <div
+            className="rounded-[22px] p-1 max-h-[220px] overflow-y-auto space-y-1"
+            style={{
+              background: "var(--glass-sub)",
+              boxShadow: "var(--ring-sub)",
+            }}
+          >
+            {filteredVoices.map((v) => {
+              const isSelected = selectedVoice === v.short_name;
+              const isPlayingNow = previewingVoice === v.short_name;
+              const persona = extractPersona(v.friendly_name, v.short_name);
+              const meta = v.friendly_name.includes(" — ")
+                ? v.friendly_name.split(" — ")[1]
+                : v.friendly_name.includes(" - ")
+                ? v.friendly_name.split(" - ")[1]
+                : v.locale;
+
+              return (
+                <div
                   key={v.short_name}
-                  value={v.short_name}
-                  className="bg-[#0e1d33] text-[#eaf1fa]"
+                  onClick={() => setSelectedVoice(v.short_name)}
+                  className="vrow flex items-center gap-3.5 min-h-[58px] p-2 pl-3.5 rounded-[18px] cursor-pointer transition"
+                  style={{
+                    background: isSelected ? "var(--glass-seg-on)" : "transparent",
+                    boxShadow: isSelected ? "var(--shadow-seg-on)" : "none",
+                  }}
                 >
-                  {v.friendly_name}
-                </option>
-              ))}
-            </select>
+                  <input
+                    type="radio"
+                    name="narrador"
+                    id={`cv-${v.short_name}`}
+                    checked={isSelected}
+                    onChange={() => setSelectedVoice(v.short_name)}
+                    className="w-[18px] h-[18px] m-0 cursor-pointer"
+                    style={{ accentColor: "var(--ink)" }}
+                  />
+                  <label
+                    htmlFor={`cv-${v.short_name}`}
+                    className="flex-1 min-w-0 cursor-pointer flex flex-col"
+                  >
+                    <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                      {persona}
+                    </span>
+                    <span className="text-[13px] truncate" style={{ color: "var(--muted)" }}>
+                      {meta}
+                    </span>
+                  </label>
 
-            <button
-              type="button"
-              onClick={handlePreviewVoice}
-              disabled={previewing || loading}
-              className="min-h-[44px] flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border text-[#64c7f5] hover:bg-[#0a1729] disabled:opacity-50 transition shrink-0"
-              style={{ borderColor: "var(--line-strong)" }}
-              title="Escuchar voz de esta persona"
-            >
-              {previewing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1ea7e8]" />
-              ) : (
-                <Volume2 className="w-3.5 h-3.5" />
-              )}
-              <span>Probar</span>
-            </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePreviewVoice(v.short_name);
+                    }}
+                    disabled={loading}
+                    aria-label={`${isPlayingNow ? "Detener" : "Escuchar"} muestra de ${persona}`}
+                    className="quiet inline-flex items-center gap-2 h-9 px-3.5 pl-1.5 rounded-full border-0 text-[13px] font-medium cursor-pointer"
+                    style={{
+                      background: "transparent",
+                      color: isSelected ? "var(--ink)" : "var(--soft)",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="w-[26px] h-[26px] rounded-full inline-flex items-center justify-center"
+                      style={{
+                        background: isSelected ? "var(--icon-chip)" : "var(--btn-ghost)",
+                      }}
+                    >
+                      {isPlayingNow ? (
+                        <Pause className="w-3 h-3 fill-current" />
+                      ) : (
+                        <Play className="w-3 h-3 fill-current ml-0.5" />
+                      )}
+                    </span>
+                    <span>{isPlayingNow ? "Detener" : "Escuchar"}</span>
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        </fieldset>
 
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => !loading && inputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${
-            loading ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          style={{
-            backgroundColor: "var(--bg)",
-            borderColor: isDragging ? "var(--accent)" : "var(--line-strong)",
-          }}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          {file ? (
-            <div className="flex flex-col items-center gap-2 text-center">
-              <FileText className="w-10 h-10 text-[#64c7f5]" />
-              <span className="font-semibold text-sm text-[#eaf1fa] truncate max-w-xs">
-                {file.name}
-              </span>
-              <span className="text-xs text-[#93a3b8]">
-                {(file.size / (1024 * 1024)).toFixed(2)} MB
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-center">
-              <UploadCloud className="w-10 h-10 text-[#64c7f5]" />
-              <span className="text-sm font-semibold text-[#eaf1fa]">
-                Arrastra tu PDF aquí o haz clic para explorar
-              </span>
-              <span className="text-xs text-[#93a3b8]">Archivos .pdf</span>
-            </div>
-          )}
-        </div>
-
+        {/* 5. Error */}
         {error && (
           <p
             role="alert"
-            className="text-xs font-medium text-red-300 border border-red-400/30 rounded-xl px-3 py-2 mt-3"
+            className="text-xs font-medium rounded-xl px-4 py-3 m-0"
+            style={{
+              background: "rgba(143,58,51,0.1)",
+              color: "var(--danger)",
+              border: "1px solid var(--danger)",
+            }}
           >
             {error}
           </p>
         )}
 
-        <div className="mt-6 flex gap-3 justify-end">
+        {/* 6. Pie */}
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <p className="flex-1 min-w-[200px] m-0 text-[13px]" style={{ color: "var(--muted)" }}>
+            La voz se genera con Edge TTS y necesita conexión.
+          </p>
           <button
+            type="button"
             onClick={onClose}
             disabled={loading}
-            className="min-h-[44px] px-4 py-2 text-sm font-semibold rounded-xl border text-[#c3cfdd] hover:bg-[#0a1729] transition"
-            style={{ borderColor: "var(--line-strong)" }}
+            className="quiet inline-flex items-center h-11 px-4 rounded-full border-0 text-[15px] font-medium cursor-pointer"
+            style={{ color: "var(--soft)" }}
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleUpload}
             disabled={!file || loading}
-            className="min-h-[44px] flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl disabled:opacity-50 transition hover:opacity-95"
+            className="glbtn inline-flex items-center gap-2 h-11 px-5 pl-4 rounded-full border-0 text-[15px] font-medium cursor-pointer disabled:opacity-40"
             style={{
-              background: "var(--primary-btn-bg)",
-              color: "var(--primary-btn-text)",
+              background: "var(--btn-primary)",
+              boxShadow: "var(--ring-primary)",
+              color: "var(--btn-primary-ink)",
             }}
           >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Check className="w-4 h-4" strokeWidth={2} />
+            )}
             <span>{loading ? "Analizando PDF..." : "Importar"}</span>
           </button>
         </div>

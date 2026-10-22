@@ -4,21 +4,16 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Headphones,
+  List,
   Loader2,
-  Moon,
   Pause,
   Play,
   RotateCcw,
   RotateCw,
-  Sun,
-  Coffee,
-  Type,
-  Volume2,
-  List,
   Settings,
 } from "lucide-react";
 import {
@@ -30,17 +25,48 @@ import {
   WordTiming,
   getBaseUrl,
 } from "@/lib/api";
+import { Theme, useTheme } from "@/lib/useTheme";
 
-type Theme = "light" | "sepia" | "dark";
 type FontSize = "sm" | "base" | "lg" | "xl";
 
 const TOTAL_PARTS = 5;
+
+const FONT_LABELS: Record<FontSize, string> = {
+  sm: "Pequeño (18 px)",
+  base: "Mediano (20 px)",
+  lg: "Grande (22 px)",
+  xl: "Muy grande (25 px)",
+};
+
+const FONT_STYLES: Record<FontSize, React.CSSProperties> = {
+  sm: { fontSize: "18px", lineHeight: 1.7 },
+  base: { fontSize: "20px", lineHeight: 1.74 },
+  lg: { fontSize: "22px", lineHeight: 1.74 },
+  xl: { fontSize: "25px", lineHeight: 1.72 },
+};
+
+function formatTime(sec: number) {
+  if (isNaN(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function extractPersona(friendlyName?: string, shortName?: string): string {
+  if (friendlyName) {
+    const parts = friendlyName.split(/\s*[-—]\s*/);
+    if (parts[0]) return parts[0].trim();
+  }
+  if (!shortName) return "Narrador";
+  const parts = shortName.split("-");
+  const last = parts[parts.length - 1] || "";
+  return last.replace("Neural", "");
+}
 
 function ReaderContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("id") || "";
 
-  // Estados de datos
   const [book, setBook] = useState<BookDetail | null>(null);
   const [chapter, setChapter] = useState<ChapterDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,7 +75,6 @@ function ReaderContent() {
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
-  // Estados de reproducción y carga progresiva por fragmentos (1..5)
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [loadedParts, setLoadedParts] = useState<number>(0);
@@ -58,9 +83,9 @@ function ReaderContent() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // UI preferences
-  const [theme, setTheme] = useState<Theme>("dark");
+  const { theme, setTheme } = useTheme();
   const [fontSize, setFontSize] = useState<FontSize>("base");
+  const [isAaOpen, setIsAaOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
   const [boundaryType, setBoundaryType] = useState<"SentenceBoundary" | "WordBoundary">(
@@ -77,20 +102,19 @@ function ReaderContent() {
   const isInitialLoadRef = useRef<boolean>(true);
   const singleSentenceEndRef = useRef<number | null>(null);
 
+  const aaRef = useRef<HTMLDivElement>(null);
+  const tocRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Cargar preferencias guardadas y tema (oscuro por defecto)
   useEffect(() => {
-    const savedTheme = (localStorage.getItem("letha_ui_theme") as Theme) || "dark";
-    setTheme(savedTheme);
-    applyTheme(savedTheme);
+    try {
+      const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
+      setFontSize(savedFont);
+    } catch {}
 
-    const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
-    setFontSize(savedFont);
-
-    // Cargar voces y configuración de la app
     api.getVoices().then(setVoices).catch(console.error);
     api
       .getAppSettings()
@@ -103,21 +127,30 @@ function ReaderContent() {
       .catch(console.error);
   }, []);
 
-  const applyTheme = (t: Theme) => {
-    document.documentElement.classList.toggle("dark", t === "dark");
-    document.body.classList.remove("theme-sepia", "theme-dark");
-    if (t === "sepia") document.body.classList.add("theme-sepia");
-    if (t === "dark") document.body.classList.add("theme-dark");
-    localStorage.setItem("letha_ui_theme", t);
-  };
+  useEffect(() => {
+    if (!isAaOpen && !isTocOpen) return;
+    const handleDown = (e: MouseEvent) => {
+      if (isAaOpen && aaRef.current && !aaRef.current.contains(e.target as Node)) {
+        setIsAaOpen(false);
+      }
+      if (isTocOpen && tocRef.current && !tocRef.current.contains(e.target as Node)) {
+        setIsTocOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsAaOpen(false);
+        setIsTocOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [isAaOpen, isTocOpen]);
 
-  const cycleTheme = () => {
-    const next: Theme = theme === "dark" ? "light" : theme === "light" ? "sepia" : "dark";
-    setTheme(next);
-    applyTheme(next);
-  };
-
-  // Cargar libro inicial (incluyendo la voz previamente guardada antes de cargar el capítulo)
   useEffect(() => {
     if (!bookId) return;
     let ignore = false;
@@ -153,8 +186,6 @@ function ReaderContent() {
       ignore = true;
     };
   }, [bookId]);
-
-  // Cargar capítulo y sintetizar en 5 partes cuando cambie currentChapterIdx o selectedVoice
   useEffect(() => {
     if (!bookId || currentChapterIdx === null || !selectedVoice) return;
     let ignore = false;
@@ -226,7 +257,6 @@ function ReaderContent() {
           }
         };
 
-        // Si la página ya está completamente sintetizada en caché para esta voz
         if (c.has_audio) {
           setLoadedParts(TOTAL_PARTS);
           setIsSynthesizing(false);
@@ -239,8 +269,6 @@ function ReaderContent() {
           return;
         }
 
-        // Determinar cuántos fragmentos iniciales (ej. el fragmento 1 precargado desde la página anterior)
-        // ya están listos en disco para no volver a pedirlos y empezar desde el siguiente fragmento.
         const startPart = Math.min(TOTAL_PARTS, Math.max(0, c.loaded_parts || 0));
         setLoadedParts(startPart);
         setIsSynthesizing(true);
@@ -274,14 +302,13 @@ function ReaderContent() {
               ? {
                   ...prev,
                   has_audio: res.is_complete,
-                   loaded_parts: res.part,
+                  loaded_parts: res.part,
                   duration_seconds: res.duration,
                   sentences: res.sentences,
                 }
               : prev
           );
 
-          // Si había una oración restaurada y su fragmento acaba de cargarse, preparar su posición
           if (
             restoredSentence > 0 &&
             restoredSentence < res.sentences.length &&
@@ -299,7 +326,6 @@ function ReaderContent() {
           if (p === 0 && startPart === 0) {
             setAudioUrl(nextAudioUrl);
           } else if (res.is_complete || !isPlayingRef.current) {
-            // Al completar las 5 partes (o si está en pausa), actualizar el audio combinado final
             if (isPlayingRef.current && audioRef.current) {
               pendingSeekTimeRef.current = audioRef.current.currentTime;
               resumePlayAfterSwapRef.current = true;
@@ -342,7 +368,6 @@ function ReaderContent() {
     };
   }, [bookId, currentChapterIdx, selectedVoice]);
 
-  // En modo "Solo al clickear" o al seleccionar una palabra individual, pausar con precisión al terminar el segmento
   useEffect(() => {
     if (!isPlaying) return;
     if (autoAdvanceSentence && singleSentenceEndRef.current === null) return;
@@ -366,7 +391,6 @@ function ReaderContent() {
     return () => window.clearInterval(timer);
   }, [isPlaying, autoAdvanceSentence, activeSentenceIdx, chapter]);
 
-  // Sincronización Karaoke: Detectar oración activa según currentTime
   useEffect(() => {
     if (
       !chapter?.sentences ||
@@ -377,11 +401,9 @@ function ReaderContent() {
     ) {
       return;
     }
-    // Evitar que currentTime=0 al montar en pausa pise la oración restaurada
     if (!isPlaying && currentTime === 0 && activeSentenceIdx > 0) {
       return;
     }
-    // En modo "Solo al clickear", mientras se reproduce la oración elegida, mantener el foco en ella
     if (!autoAdvanceSentence && singleSentenceEndRef.current !== null) {
       return;
     }
@@ -400,7 +422,6 @@ function ReaderContent() {
         api.updateProgress(bookId, currentChapterIdx, idx).catch(console.error);
       }
 
-      // Auto-scroll suave hacia la oración activa
       const elem = sentenceRefs.current[idx];
       if (elem) {
         elem.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -416,7 +437,6 @@ function ReaderContent() {
     autoAdvanceSentence,
   ]);
 
-  // Clic en una oración: saltar audio a esa posición si su fragmento ya está cargado
   const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
     setActiveSentenceIdx(sIdx);
     setActiveWordKey(null);
@@ -436,7 +456,6 @@ function ReaderContent() {
     }
   };
 
-  // Clic en una palabra individual (modo WordBoundary): reproducir únicamente esa palabra
   const handleWordClick = (
     sentence: SentenceItem,
     sIdx: number,
@@ -508,10 +527,8 @@ function ReaderContent() {
             <span
               key={pIdx}
               onClick={(e) => handleWordClick(s, sentIdx, wordTiming, matchedIdx, e)}
-              className={`rounded px-0.5 transition-colors cursor-pointer ${
-                isWordSelected
-                  ? "bg-amber-500 text-white font-semibold"
-                  : "hover:bg-amber-500/20 hover:underline decoration-amber-500"
+              className={`word-item cursor-pointer transition ${
+                isWordSelected ? "word-active" : ""
               }`}
               title={`Escuchar "${wordTiming.text}" (${wordTiming.start.toFixed(2)}s)`}
             >
@@ -523,7 +540,6 @@ function ReaderContent() {
     );
   };
 
-  // Controles de reproducción
   const togglePlay = () => {
     if (!audioRef.current) return;
     if (isPlaying) {
@@ -572,7 +588,8 @@ function ReaderContent() {
   const bookVoices = book
     ? voices.filter(
         (v) =>
-          v.locale.toLowerCase().startsWith(`${book.language}-`) || v.short_name === selectedVoice
+          v.locale.toLowerCase().startsWith(`${book.language}-`) ||
+          v.short_name === selectedVoice
       )
     : [];
 
@@ -583,7 +600,6 @@ function ReaderContent() {
     }
     setIsPlaying(false);
     setAudioUrl(null);
-    // Mostrar las oraciones actuales en tono opaco mientras se carga la nueva voz
     setChapter((prev) =>
       prev
         ? {
@@ -609,29 +625,26 @@ function ReaderContent() {
     }
   };
 
-  const cycleFontSize = () => {
-    const sizes: FontSize[] = ["sm", "base", "lg", "xl"];
-    const next = sizes[(sizes.indexOf(fontSize) + 1) % sizes.length];
+  const stepFontSize = (delta: number) => {
+    const order: FontSize[] = ["sm", "base", "lg", "xl"];
+    const curIdx = order.indexOf(fontSize);
+    const nextIdx = Math.max(0, Math.min(order.length - 1, curIdx + delta));
+    const next = order[nextIdx];
     setFontSize(next);
-    localStorage.setItem("letha_fontsize", next);
+    try {
+      localStorage.setItem("letha_fontsize", next);
+    } catch {}
   };
 
-  const fontClass = {
-    sm: "text-base leading-relaxed max-w-2xl",
-    base: "text-lg leading-loose max-w-3xl",
-    lg: "text-xl leading-loose max-w-3xl",
-    xl: "text-2xl leading-loose max-w-4xl",
-  }[fontSize];
+  const matchedVoice = voices.find((v) => v.short_name === selectedVoice);
+  const personaName = extractPersona(matchedVoice?.friendly_name, selectedVoice || undefined);
 
-  const getActiveSentenceClass = () => {
-    if (theme === "sepia") return "sentence-active-sepia";
-    if (theme === "dark") return "sentence-active-dark";
-    return "sentence-active-light";
-  };
-
+  const bookProgressPct =
+    book && book.total_chapters > 0 && currentChapterIdx !== null
+      ? Math.min(100, Math.round(((currentChapterIdx + 1) / book.total_chapters) * 100))
+      : 0;
   return (
-    <div className="min-h-screen flex flex-col pb-32">
-      {/* Elemento de audio nativo */}
+    <div className="min-h-screen flex flex-col pb-36">
       {audioUrl && (
         <audio
           ref={audioRef}
@@ -664,328 +677,566 @@ function ReaderContent() {
       )}
 
       {/* Barra superior de lectura */}
-      <header
-        className="sticky top-0 z-30 border-b backdrop-blur-xl flex items-center"
-        style={{
-          paddingTop: "14px",
-          paddingBottom: "14px",
-          backgroundColor: "var(--header-bg)",
-          borderColor: "var(--line)",
-        }}
-      >
-        <div className="max-w-6xl mx-auto px-4 w-full flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+      <div className="sticky top-0 z-30 p-4 pb-0 pointer-events-none">
+        <header
+          className="glass pointer-events-auto max-w-[1180px] mx-auto rounded-[22px] px-2.5 pt-0 pb-2 relative"
+          style={{
+            background: "var(--glass-bar)",
+            boxShadow: "var(--ring-bar)",
+          }}
+        >
+          <div className="h-14 flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0 flex items-center gap-1">
+              <Link
+                href="/"
+                className="quiet inline-flex items-center gap-1.5 h-10 px-3 pl-2 rounded-full text-sm no-underline"
+                style={{ color: "var(--muted)" }}
+              >
+                <ChevronLeft className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                <span>Biblioteca</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTocOpen((prev) => !prev);
+                  setIsAaOpen(false);
+                }}
+                aria-expanded={isTocOpen}
+                className="quiet inline-flex items-center gap-2 h-10 px-3.5 pl-2.5 rounded-full border-0 text-sm cursor-pointer"
+                style={{
+                  background: isTocOpen ? "var(--hover)" : "transparent",
+                  color: "var(--ink)",
+                }}
+              >
+                <List className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                <span>Índice</span>
+              </button>
+            </div>
+
+            <div className="flex-initial min-w-0 text-center px-2">
+              <p className="m-0 text-sm font-medium truncate max-w-sm" style={{ color: "var(--ink)" }}>
+                {book?.title || "Cargando..."}
+              </p>
+              <p className="m-0 text-xs tabular-nums truncate" style={{ color: "var(--muted)" }}>
+                Pág. {currentChapterIdx !== null ? currentChapterIdx + 1 : 1} de{" "}
+                {book?.total_chapters || 1}
+                {chapter?.title ? ` · ${chapter.title}` : ""}
+              </p>
+            </div>
+
+            <div className="flex-1 min-w-0 flex items-center justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAaOpen((prev) => !prev);
+                  setIsTocOpen(false);
+                }}
+                aria-expanded={isAaOpen}
+                aria-label="Apariencia del texto"
+                className="quiet inline-flex items-center justify-center h-10 min-w-[48px] px-3 rounded-full border-0 font-serif text-[17px] cursor-pointer"
+                style={{
+                  background: isAaOpen ? "var(--hover)" : "transparent",
+                  color: "var(--ink)",
+                }}
+              >
+                Aa
+              </button>
+
+              <Link
+                href={`/settings?bookId=${bookId}`}
+                aria-label="Configuración"
+                className="quiet inline-flex items-center justify-center w-10 h-10 rounded-full no-underline"
+                style={{ color: "var(--muted)" }}
+              >
+                <Settings className="w-[18px] h-[18px]" strokeWidth={1.6} />
+              </Link>
+            </div>
+          </div>
+
+          <div
+            role="progressbar"
+            aria-label="Progreso en el libro"
+            aria-valuenow={bookProgressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-[2px] mx-4 rounded-full overflow-hidden"
+            style={{ background: "var(--track)" }}
+          >
+            <div
+              className="h-full transition-all duration-300"
+              style={{ width: `${bookProgressPct}%`, background: "var(--fill)" }}
+            />
+          </div>
+        </header>
+      </div>
+
+      {/* Popover Aa */}
+      {isAaOpen && (
+        <div
+          ref={aaRef}
+          role="dialog"
+          aria-label="Apariencia del texto"
+          className="glass-strong fixed z-40 top-20 right-8 w-80 max-w-[calc(100%-48px)] p-[18px] rounded-[24px] box-border flex flex-col gap-4"
+          style={{
+            background: "var(--glass-menu)",
+            boxShadow: "var(--ring-menu)",
+          }}
+        >
+          <div>
+            <p className="m-0 mb-2.5 text-[13px] font-medium" style={{ color: "var(--muted)" }}>
+              Tema
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                {
+                  id: "light" as Theme,
+                  label: "Claro",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(196, 128, 124, 0.5), rgba(196, 128, 124, 0)), radial-gradient(60px 50px at 90% 80%, rgba(150, 180, 205, 0.6), rgba(150, 180, 205, 0)), #f2efee",
+                  ink: "#1f2227",
+                },
+                {
+                  id: "sepia" as Theme,
+                  label: "Sepia",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(205, 150, 105, 0.5), rgba(205, 150, 105, 0)), #f4eadc",
+                  ink: "#3a2f24",
+                },
+                {
+                  id: "dark" as Theme,
+                  label: "Oscuro",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(138, 72, 78, 0.6), rgba(138, 72, 78, 0)), radial-gradient(60px 50px at 90% 80%, rgba(60, 92, 122, 0.6), rgba(60, 92, 122, 0)), #1a1b1f",
+                  ink: "#ebe9e4",
+                },
+              ].map((t) => {
+                const isActive = theme === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTheme(t.id)}
+                    aria-pressed={isActive}
+                    className="p-0 border-0 bg-transparent cursor-pointer flex flex-col gap-1.5 items-stretch"
+                  >
+                    <span
+                      className="h-14 rounded-2xl flex items-center justify-center font-serif text-xl"
+                      style={{
+                        background: t.bg,
+                        color: t.ink,
+                        boxShadow: isActive
+                          ? "inset 0 0 0 2px var(--ink)"
+                          : "inset 0 0 0 1px var(--track)",
+                      }}
+                    >
+                      Aa
+                    </span>
+                    <span className="text-[13px] text-center" style={{ color: "var(--ink)" }}>
+                      {t.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="m-0 mb-2.5 text-[13px] font-medium" style={{ color: "var(--muted)" }}>
+              Tamaño del texto
+            </p>
+            <div
+              className="flex items-center gap-2 p-1 rounded-full"
+              style={{ background: "var(--glass-seg)" }}
+            >
+              <button
+                type="button"
+                onClick={() => stepFontSize(-1)}
+                aria-label="Texto más pequeño"
+                className="quiet w-11 h-9 rounded-full border-0 font-serif text-sm cursor-pointer"
+                style={{ color: "var(--ink)" }}
+              >
+                A−
+              </button>
+              <span className="flex-1 text-center text-[13px] font-medium tabular-nums" style={{ color: "var(--ink)" }}>
+                {FONT_LABELS[fontSize]}
+              </span>
+              <button
+                type="button"
+                onClick={() => stepFontSize(1)}
+                aria-label="Texto más grande"
+                className="quiet w-11 h-9 rounded-full border-0 font-serif text-lg cursor-pointer"
+                style={{ color: "var(--ink)" }}
+              >
+                A+
+              </button>
+            </div>
+          </div>
+
+          <Link
+            href={`/settings?bookId=${bookId}`}
+            onClick={() => setIsAaOpen(false)}
+            className="text-[13px] underline underline-offset-4 decoration-[var(--dash)] hover:opacity-80 pt-1"
+            style={{ color: "var(--ink)" }}
+          >
+            Modo de lectura y velocidad en Configuración
+          </Link>
+        </div>
+      )}
+
+      {/* Popover Índice */}
+      {isTocOpen && (
+        <nav
+          ref={tocRef}
+          aria-label="Índice del libro"
+          className="glass-strong fixed z-40 top-20 left-8 w-[340px] max-w-[calc(100%-48px)] p-2.5 rounded-[24px] box-border max-h-[75vh] flex flex-col shadow-2xl"
+          style={{
+            background: "var(--glass-menu)",
+            boxShadow: "var(--ring-menu)",
+          }}
+        >
+          <div className="flex items-center justify-between p-2 pb-2.5">
+            <h2 className="m-0 text-[15px] font-semibold" style={{ color: "var(--ink)" }}>
+              Índice
+            </h2>
+            <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
+              {book?.total_chapters || 0} págs.
+            </span>
+          </div>
+
+          <div className="overflow-y-auto flex-1 space-y-1 pr-1">
+            {book?.chapters.map((c) => {
+              const isCurrent = c.idx === currentChapterIdx;
+              return (
+                <button
+                  key={c.idx}
+                  type="button"
+                  onClick={() => {
+                    setCurrentChapterIdx(c.idx);
+                    setIsTocOpen(false);
+                  }}
+                  className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 border-0 rounded-2xl text-left cursor-pointer transition text-sm"
+                  style={{
+                    background: isCurrent ? "var(--hl)" : "transparent",
+                    color: isCurrent ? "var(--hl-ink)" : "var(--ink)",
+                    fontWeight: isCurrent ? 600 : 400,
+                  }}
+                >
+                  <span className="flex-1 truncate">{c.title}</span>
+                  {c.has_audio && (
+                    <Headphones className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
+
+      {/* Hoja de lectura */}
+      <main className="flex-1 w-full mx-auto px-5 py-9 flex flex-col items-center box-border">
+        {loadError ? (
+          <div className="glass-strong max-w-md p-8 rounded-[30px] flex flex-col items-center justify-center text-center gap-4 my-16" style={{ background: "var(--glass-sheet)", boxShadow: "var(--shadow-sheet)" }}>
+            <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>
+              {loadError}
+            </p>
             <Link
               href="/"
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
-              title="Volver a la biblioteca"
+              className="glbtn inline-flex items-center h-10 px-5 rounded-full text-xs font-semibold no-underline"
+              style={{
+                background: "var(--btn-primary)",
+                color: "var(--btn-primary-ink)",
+                boxShadow: "var(--ring-primary)",
+              }}
             >
-              <ArrowLeft className="w-5 h-5" />
+              Volver a la biblioteca
             </Link>
-
-            <button
-              onClick={() => setIsTocOpen(!isTocOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/40 dark:bg-white/[0.05] border border-slate-300/60 dark:border-white/10 hover:bg-white/70 dark:hover:bg-white/10 transition"
-            >
-              <List className="w-4 h-4" />
-              <span className="hidden sm:inline">Índice</span>
-            </button>
           </div>
-
-          <div className="flex-1 text-center truncate px-2">
-            <h2 className="text-xs font-bold truncate">{book?.title || "Cargando..."}</h2>
-            <p className="text-[11px] text-slate-400 truncate">{chapter?.title}</p>
+        ) : !chapter ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3" style={{ color: "var(--muted)" }}>
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--muted)" }} />
+            <span className="text-sm">Cargando capítulo...</span>
           </div>
-
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              onClick={cycleFontSize}
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition flex items-center gap-1"
-              title="Cambiar tamaño de texto"
+        ) : (
+          <div
+            className="glass-strong w-full max-w-[800px] rounded-[34px] px-[clamp(22px,6vw,76px)] pt-[60px] pb-[72px] box-border"
+            style={{
+              background: "var(--glass-sheet)",
+              boxShadow: "var(--shadow-sheet)",
+            }}
+          >
+            <article
+              className="font-serif max-w-[33em] mx-auto text-left hyphens-auto select-text"
+              style={FONT_STYLES[fontSize]}
             >
-              <Type className="w-4 h-4" />
-              <span className="text-[10px] font-bold uppercase">{fontSize}</span>
-            </button>
+              <header className="mb-9 pb-4">
+                <p className="m-0 font-sans text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>
+                  Páginas {chapter.start_page} – {chapter.end_page}
+                </p>
+                <h1 className="m-0 mt-1.5 font-serif text-[38px] leading-[1.15] font-normal tracking-[-0.012em]" style={{ color: "var(--ink)" }}>
+                  {chapter.title}
+                </h1>
+              </header>
 
-            <button
-              onClick={cycleTheme}
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
-              title="Cambiar tema de color"
-            >
-              {theme === "light" && <Sun className="w-4 h-4 text-amber-500" />}
-              {theme === "sepia" && <Coffee className="w-4 h-4 text-amber-600" />}
-              {theme === "dark" && <Moon className="w-4 h-4 text-amber-300" />}
-            </button>
+              <div className="space-y-4">
+                {chapter.sentences.map((s, idx) => {
+                  const isActive = idx === activeSentenceIdx;
+                  const isVoiceReady =
+                    typeof s.start === "number" && typeof s.end === "number";
+                  return (
+                    <span
+                      key={idx}
+                      ref={(el) => {
+                        sentenceRefs.current[idx] = el;
+                      }}
+                      onClick={() => handleSentenceClick(s, idx)}
+                      className={`sentence-item inline ${
+                        isActive
+                          ? "sentence-active-light opacity-100 cursor-pointer"
+                          : isVoiceReady
+                          ? "sentence-ready opacity-100 cursor-pointer"
+                          : "opacity-35 cursor-wait"
+                      }`}
+                      title={
+                        isVoiceReady
+                          ? boundaryType === "WordBoundary"
+                            ? "Haz clic en una palabra para escucharla o en la frase"
+                            : `Escuchar desde ${(s.start as number).toFixed(1)}s`
+                          : "Cargando voz para este fragmento..."
+                      }
+                    >
+                      {renderSentenceContent(s, idx)}
+                    </span>
+                  );
+                })}
+              </div>
+            </article>
+          </div>
+        )}
+      </main>
 
-            <Link
-              href={`/settings?bookId=${bookId}`}
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-500/10 transition"
-              title="Configuración de la app"
-            >
-              <Settings className="w-4 h-4" />
-            </Link>
-
+      {/* Reproductor fijo abajo */}
+      <footer className="fixed bottom-5 left-0 right-0 z-30 px-4 pointer-events-none flex justify-center">
+        <div
+          className="glass-strong pointer-events-auto w-full max-w-[760px] rounded-[30px] p-[10px] pl-2.5 pr-3.5 flex flex-wrap items-center gap-3"
+          style={{
+            background: "var(--glass-dock)",
+            boxShadow: "var(--shadow-dock)",
+            color: "var(--ink)",
+          }}
+        >
+          {/* 1. Selector de Voz chip */}
+          <div className="relative shrink-0">
+            <div className="quiet inline-flex items-center gap-2 h-11 px-2.5 pl-1.5 rounded-full cursor-pointer pointer-events-none select-none">
+              <span
+                className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-[13px]"
+                style={{ background: "var(--icon-chip)", color: "var(--ink)" }}
+              >
+                {personaName.charAt(0).toUpperCase()}
+              </span>
+              <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                {personaName}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 opacity-60" style={{ color: "var(--ink)" }} />
+            </div>
             <select
               value={selectedVoice || "es-MX-DaliaNeural"}
               onChange={(e) => handleVoiceChange(e.target.value)}
-              className="max-w-[160px] sm:max-w-[240px] text-xs font-medium bg-white/40 dark:bg-white/[0.05] border border-slate-300/60 dark:border-white/10 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer truncate"
-              title="Cambiar persona que narra"
+              aria-label={`Narrador: ${personaName}. Cambiar narrador`}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >
               {bookVoices.map((v) => (
                 <option
                   key={v.short_name}
                   value={v.short_name}
-                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+                  className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                 >
                   {v.friendly_name}
                 </option>
               ))}
             </select>
           </div>
-        </div>
 
-        {/* Barra superior de progreso de fragmentos de voz (1 de 5 .. 5 de 5) */}
-        {isSynthesizing && (
-          <div className="border-t border-amber-400/20 bg-amber-500/10 backdrop-blur-md px-4 py-1.5">
-            <div className="max-w-3xl mx-auto flex items-center gap-3">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
-              <div className="flex-1 h-1.5 bg-slate-300/50 dark:bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-amber-500 to-sky-400 transition-all duration-300 rounded-full"
-                  style={{
-                    width: `${Math.max(10, (loadedParts / TOTAL_PARTS) * 100)}%`,
-                  }}
-                />
-              </div>
-              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-300 tabular-nums shrink-0">
-                {Math.max(1, loadedParts)} de {TOTAL_PARTS}
-              </span>
-            </div>
-          </div>
-        )}
-      </header>
-
-      {/* Drawer / Menú lateral de Capítulos */}
-      {isTocOpen && (
-        <div className="fixed inset-0 z-40 flex">
-          <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setIsTocOpen(false)}
-          />
-          <div className="relative w-80 max-w-full bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 h-full p-6 overflow-y-auto shadow-2xl flex flex-col z-50">
-            <h3 className="font-bold text-base mb-4 flex items-center gap-2">
-              <List className="w-4 h-4 text-amber-500" />
-              <span>Contenido del libro</span>
-            </h3>
-            <div className="space-y-1 flex-1">
-              {book?.chapters.map((c) => (
-                <button
-                  key={c.idx}
-                  onClick={() => {
-                    setCurrentChapterIdx(c.idx);
-                    setIsTocOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition flex items-center justify-between ${
-                    c.idx === currentChapterIdx
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold"
-                      : "hover:bg-zinc-100 dark:hover:bg-zinc-800/60 text-zinc-600 dark:text-zinc-300"
-                  }`}
-                >
-                  <span className="truncate pr-2">{c.title}</span>
-                  {c.has_audio && (
-                    <Headphones className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Área de lectura del texto */}
-      <main className="flex-1 w-full mx-auto px-6 sm:px-12 py-12 flex flex-col items-center">
-        {loadError ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center max-w-md gap-4">
-            <p className="text-sm font-medium text-red-500">{loadError}</p>
-            <Link
-              href="/"
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition"
+          {/* 2. Controles de transporte */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              disabled={currentChapterIdx === null || currentChapterIdx <= 0}
+              onClick={() =>
+                currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx - 1)
+              }
+              aria-label="Página anterior"
+              className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
+              style={{ color: "var(--ink)" }}
             >
-              Volver a la biblioteca
-            </Link>
-          </div>
-        ) : !chapter ? (
-          <div className="flex flex-col items-center justify-center py-24 text-[#93a3b8] gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
-            <span className="text-sm">Cargando capítulo...</span>
-          </div>
-        ) : (
-          <article className={`font-serif ${fontClass} tracking-normal text-justify select-text`}>
-            <header className="mb-8 text-center border-b border-zinc-200 dark:border-zinc-800 pb-6">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-sans">
-                {chapter.title}
-              </h1>
-              <p className="text-xs text-zinc-400 mt-2 font-sans">
-                Páginas {chapter.start_page} – {chapter.end_page}
-              </p>
-            </header>
+              <ChevronLeft className="w-5 h-5" strokeWidth={1.7} />
+            </button>
 
-            <div className="space-y-4">
-              {chapter.sentences.map((s, idx) => {
-                const isActive = idx === activeSentenceIdx;
-                const isVoiceReady =
-                  typeof s.start === "number" && typeof s.end === "number";
-                return (
-                  <span
-                    key={idx}
-                    ref={(el) => {
-                      sentenceRefs.current[idx] = el;
-                    }}
-                    onClick={() => handleSentenceClick(s, idx)}
-                    className={`sentence-item inline transition-opacity duration-300 ${
-                      isActive
-                        ? `${getActiveSentenceClass()} opacity-100 cursor-pointer`
-                        : isVoiceReady
-                        ? "opacity-100 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
-                        : "opacity-35 cursor-wait"
-                    }`}
-                    title={
-                      isVoiceReady
-                        ? boundaryType === "WordBoundary"
-                          ? "Haz clic en una palabra para escucharla o en la frase"
-                          : `Escuchar desde ${(s.start as number).toFixed(1)}s`
-                        : "Cargando voz para este fragmento..."
-                    }
-                  >
-                    {renderSentenceContent(s, idx)}
-                  </span>
-                );
-              })}
-            </div>
-          </article>
-        )}
-      </main>
-
-      {/* Barra de Transporte Flotante de Audio */}
-      <footer className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-xl bg-white/75 dark:bg-slate-900/65 border-slate-300/60 dark:border-white/[0.08] shadow-2xl px-4 py-3">
-        <div className="max-w-3xl mx-auto flex flex-col gap-2">
-          {!audioUrl && isSynthesizing ? (
-            <div className="flex items-center justify-center gap-2 py-2 text-xs font-medium text-[#64c7f5]">
-              <Loader2 className="w-4 h-4 animate-spin text-[#1ea7e8]" />
-              <span>
-                Cargando voz del fragmento {Math.max(1, loadedParts)} de {TOTAL_PARTS}...
+            <button
+              type="button"
+              disabled={!audioUrl}
+              onClick={() => seekRelative(-10)}
+              aria-label="Retroceder 10 segundos"
+              className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition relative"
+              style={{ color: "var(--ink)" }}
+            >
+              <RotateCcw className="w-[22px] h-[22px]" strokeWidth={1.5} />
+              <span className="absolute inset-0 flex items-center justify-center text-[7.5px] font-semibold font-sans pt-0.5 pointer-events-none tabular-nums">
+                10
               </span>
-            </div>
-          ) : (
-            <>
-              {/* Barra de progreso / Scrubber */}
-              <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono">
+            </button>
+
+            <button
+              type="button"
+              disabled={!audioUrl}
+              onClick={togglePlay}
+              aria-label={isPlaying ? "Pausar" : "Reproducir"}
+              className="w-[52px] h-[52px] rounded-full border-0 flex items-center justify-center cursor-pointer transition active:scale-95 disabled:opacity-40"
+              style={{
+                background: "var(--btn-primary)",
+                boxShadow: "var(--ring-primary)",
+                color: "var(--btn-primary-ink)",
+              }}
+            >
+              {isPlaying ? (
+                <Pause className="w-5 h-5 fill-current" />
+              ) : (
+                <Play className="w-5 h-5 fill-current ml-0.5" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              disabled={!audioUrl}
+              onClick={() => seekRelative(10)}
+              aria-label="Adelantar 10 segundos"
+              className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition relative"
+              style={{ color: "var(--ink)" }}
+            >
+              <RotateCw className="w-[22px] h-[22px]" strokeWidth={1.5} />
+              <span className="absolute inset-0 flex items-center justify-center text-[7.5px] font-semibold font-sans pt-0.5 pointer-events-none tabular-nums">
+                10
+              </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                !book ||
+                currentChapterIdx === null ||
+                currentChapterIdx + 1 >= book.total_chapters
+              }
+              onClick={() =>
+                currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx + 1)
+              }
+              aria-label="Siguiente página"
+              className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
+              style={{ color: "var(--ink)" }}
+            >
+              <ChevronRight className="w-5 h-5" strokeWidth={1.7} />
+            </button>
+          </div>
+
+          {/* 3. Línea de tiempo con 5 segmentos */}
+          <div className="flex-1 min-w-[200px] flex flex-col gap-1.5 px-1">
+            {!audioUrl && isSynthesizing ? (
+              <div className="flex items-center justify-center gap-2 py-1 text-xs font-medium" style={{ color: "var(--muted)" }}>
+                <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--muted)" }} />
                 <span>
-                  {Math.floor(currentTime / 60)}:
-                  {Math.floor(currentTime % 60)
-                    .toString()
-                    .padStart(2, "0")}
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  value={currentTime}
-                  disabled={!audioUrl}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setCurrentTime(val);
-                    if (audioRef.current) audioRef.current.currentTime = val;
-                  }}
-                  className="flex-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500 disabled:opacity-40"
-                />
-                <span>
-                  {Math.floor(duration / 60)}:
-                  {Math.floor(duration % 60)
-                    .toString()
-                    .padStart(2, "0")}
+                  Cargando voz del fragmento {Math.max(1, loadedParts)} de {TOTAL_PARTS}...
                 </span>
               </div>
+            ) : (
+              <>
+                <div className="relative w-full py-1">
+                  <div className="flex gap-[3px] h-1 w-full pointer-events-none" aria-hidden="true">
+                    {[0, 1, 2, 3, 4].map((k) => {
+                      const partDur = duration > 0 ? duration / TOTAL_PARTS : 1;
+                      const a = k * partDur;
+                      const b = (k + 1) * partDur;
+                      const fill =
+                        duration > 0
+                          ? currentTime >= b
+                            ? 100
+                            : currentTime <= a
+                            ? 0
+                            : ((currentTime - a) / (b - a)) * 100
+                          : 0;
+                      const isOk = k < loadedParts;
+                      return (
+                        <span
+                          key={k}
+                          className="relative flex-1 h-1 rounded-full overflow-hidden block box-border"
+                          style={{
+                            background: isOk ? "var(--track)" : "transparent",
+                            border: isOk ? "0" : "1px dashed var(--dash)",
+                          }}
+                        >
+                          <span
+                            className="block h-full rounded-full transition-all duration-150"
+                            style={{
+                              width: `${fill.toFixed(1)}%`,
+                              background: "var(--fill)",
+                            }}
+                          />
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 100}
+                    step={0.1}
+                    value={currentTime}
+                    disabled={!audioUrl}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setCurrentTime(val);
+                      if (audioRef.current) audioRef.current.currentTime = val;
+                    }}
+                    aria-label="Posición de reproducción"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed m-0 p-0"
+                  />
+                </div>
 
-              {/* Botones de control */}
-              <div className="flex items-center justify-between">
-                <button
-                  disabled={currentChapterIdx === null || currentChapterIdx <= 0}
-                  onClick={() =>
-                    currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx - 1)
-                  }
-                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                  title="Página anterior"
+                <div
+                  className="flex justify-between items-center gap-2 text-xs tabular-nums select-none"
+                  style={{ color: "var(--muted)" }}
                 >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    disabled={!audioUrl}
-                    onClick={() => seekRelative(-10)}
-                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                    title="Retroceder 10 segundos"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    disabled={!audioUrl}
-                    onClick={togglePlay}
-                    className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white flex items-center justify-center shadow-md transition active:scale-95"
-                    title={isPlaying ? "Pausar" : "Reproducir"}
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-6 h-6 fill-current" />
-                    ) : (
-                      <Play className="w-6 h-6 fill-current ml-0.5" />
-                    )}
-                  </button>
-
-                  <button
-                    disabled={!audioUrl}
-                    onClick={() => seekRelative(10)}
-                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                    title="Adelantar 10 segundos"
-                  >
-                    <RotateCw className="w-4 h-4" />
-                  </button>
+                  <span>{formatTime(currentTime)}</span>
+                  <span>
+                    {isSynthesizing && loadedParts < TOTAL_PARTS
+                      ? `Preparando la voz · parte ${Math.max(1, loadedParts)} de ${TOTAL_PARTS}`
+                      : "Voz lista"}
+                  </span>
+                  <span>{formatTime(duration)}</span>
                 </div>
+              </>
+            )}
+          </div>
 
-                <div className="flex items-center gap-1">
-                  <select
-                    value={playbackSpeed}
-                    onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-                    className="text-xs font-bold bg-zinc-100 dark:bg-zinc-800 rounded-xl px-2 py-1 border border-zinc-200 dark:border-zinc-700 focus:outline-none cursor-pointer"
-                  >
-                    <option value={0.75}>0.75x</option>
-                    <option value={1.0}>1.0x</option>
-                    <option value={1.25}>1.25x</option>
-                    <option value={1.5}>1.5x</option>
-                    <option value={1.75}>1.75x</option>
-                    <option value={2.0}>2.0x</option>
-                  </select>
-
-                  <button
-                    disabled={
-                      !book ||
-                      currentChapterIdx === null ||
-                      currentChapterIdx + 1 >= book.total_chapters
-                    }
-                    onClick={() =>
-                      currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx + 1)
-                    }
-                    className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-30 transition"
-                    title="Siguiente página"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+          {/* 4. Selector de Velocidad chip */}
+          <div className="relative shrink-0">
+            <div
+              className="quiet inline-flex items-center justify-center h-10 min-w-[56px] px-2.5 rounded-full text-[13px] font-semibold tabular-nums cursor-pointer pointer-events-none select-none"
+              style={{
+                background: "var(--btn-ghost)",
+                color: "var(--ink)",
+              }}
+            >
+              {playbackSpeed === 1 ? "1.0×" : `${playbackSpeed}×`}
+            </div>
+            <select
+              value={playbackSpeed}
+              onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+              aria-label={`Velocidad de reproducción ${playbackSpeed}×`}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            >
+              <option value={0.75} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">0.75×</option>
+              <option value={1.0} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">1.0×</option>
+              <option value={1.25} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">1.25×</option>
+              <option value={1.5} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">1.5×</option>
+              <option value={1.75} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">1.75×</option>
+              <option value={2.0} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">2.0×</option>
+            </select>
+          </div>
         </div>
       </footer>
     </div>
@@ -998,10 +1249,12 @@ export default function ReaderPage() {
       fallback={
         <div
           className="min-h-screen flex items-center justify-center gap-3"
-          style={{ backgroundColor: "var(--bg)", color: "var(--muted)" }}
+          style={{ color: "var(--muted)" }}
         >
-          <Loader2 className="w-8 h-8 animate-spin text-[#1ea7e8]" />
-          <span className="text-sm text-[#93a3b8]">Cargando lector...</span>
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--muted)" }} />
+          <span className="text-sm" style={{ color: "var(--muted)" }}>
+            Cargando lector...
+          </span>
         </div>
       }
     >
