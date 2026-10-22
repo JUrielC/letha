@@ -17,6 +17,7 @@ private let logURL = FileManager.default.homeDirectoryForCurrentUser
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var backgroundObservation: NSKeyValueObservation?
     private var server: Process?
     private var ownsServer = false
     private var baseURL: URL?
@@ -56,12 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildWindow() {
+        // Sin .fullSizeContentView: el WKWebView se traga los clics, y la barra debe quedar fuera para poder arrastrar la ventana.
         let mask: NSWindow.StyleMask = [
             .titled,
             .closable,
             .miniaturizable,
             .resizable,
-            .fullSizeContentView,
         ]
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 750),
@@ -72,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Letha"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.backgroundColor = NSColor(red: 0x0a / 255, green: 0x17 / 255, blue: 0x29 / 255, alpha: 1)
         window.minSize = NSSize(width: 800, height: 550)
         window.center()
         window.isReleasedWhenClosed = false
@@ -81,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
         window.contentView!.addSubview(webView)
+
+        backgroundObservation = webView.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] webView, _ in
+            self?.window.backgroundColor = webView.underPageBackgroundColor
+        }
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
