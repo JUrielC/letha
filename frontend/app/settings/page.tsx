@@ -578,28 +578,28 @@ function SettingsContent() {
                       id: "light" as Theme,
                       label: "Claro",
                       ambient:
-                        "radial-gradient(850px 700px at 4% 0%, rgba(110,196,184,0.52) 0%, rgba(110,196,184,0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(27,110,102,0.36) 0%, rgba(27,110,102,0) 62%), linear-gradient(160deg, #f5f4ee 0%, #e8eee9 100%)",
-                      sheet: "linear-gradient(180deg, rgba(255,255,255,0.58) 0%, rgba(251,250,247,0.36) 100%)",
-                      ink: "#1f201d",
-                      hl: "rgba(27,110,102,0.22)",
+                        "radial-gradient(850px 700px at 4% 0%, rgba(195, 205, 218, 0.55) 0%, rgba(195, 205, 218, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(165, 178, 192, 0.35) 0%, rgba(165, 178, 192, 0) 62%), linear-gradient(160deg, #f7f8fa 0%, #ebeef2 100%)",
+                      sheet: "linear-gradient(180deg, rgba(255,255,255,0.60) 0%, rgba(251,252,254,0.38) 100%)",
+                      ink: "#1a1d20",
+                      hl: "rgba(45,55,72,0.18)",
                     },
                     {
                       id: "sepia" as Theme,
                       label: "Sepia",
                       ambient:
-                        "radial-gradient(850px 700px at 4% 0%, rgba(214,180,110,0.60) 0%, rgba(214,180,110,0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(47,106,95,0.32) 0%, rgba(47,106,95,0) 62%), linear-gradient(160deg, #f4ecd9 0%, #eae0c6 100%)",
-                      sheet: "linear-gradient(180deg, rgba(250,244,232,0.60) 0%, rgba(243,234,216,0.38) 100%)",
+                        "radial-gradient(850px 700px at 4% 0%, rgba(214, 185, 150, 0.55) 0%, rgba(214, 185, 150, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(175, 155, 130, 0.30) 0%, rgba(175, 155, 130, 0) 62%), linear-gradient(160deg, #f4eee4 0%, #eae2d4 100%)",
+                      sheet: "linear-gradient(180deg, rgba(250,244,232,0.62) 0%, rgba(243,234,216,0.40) 100%)",
                       ink: "#3a2e20",
-                      hl: "rgba(214,180,110,0.45)",
+                      hl: "rgba(200,165,110,0.35)",
                     },
                     {
                       id: "dark" as Theme,
                       label: "Oscuro",
                       ambient:
-                        "radial-gradient(850px 700px at 4% 0%, rgba(110,196,184,0.36) 0%, rgba(110,196,184,0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(27,110,102,0.55) 0%, rgba(27,110,102,0) 62%), linear-gradient(160deg, #141413 0%, #0a0a09 100%)",
-                      sheet: "linear-gradient(180deg, rgba(26,26,25,0.52) 0%, rgba(16,16,15,0.36) 100%)",
-                      ink: "#e4e1da",
-                      hl: "rgba(110,196,184,0.28)",
+                        "radial-gradient(850px 700px at 4% 0%, rgba(65, 76, 92, 0.45) 0%, rgba(65, 76, 92, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(42, 52, 65, 0.55) 0%, rgba(42, 52, 65, 0) 62%), linear-gradient(160deg, #101216 0%, #090a0d 100%)",
+                      sheet: "linear-gradient(180deg, rgba(22,25,30,0.54) 0%, rgba(14,16,20,0.38) 100%)",
+                      ink: "#e6e9ed",
+                      hl: "rgba(154,179,207,0.25)",
                     },
                   ].map((t) => {
                     const isActive = theme === t.id;

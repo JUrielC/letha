@@ -213,6 +213,10 @@ function ReaderContent() {
 
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
+      try {
+        localStorage.setItem("letha_last_book_id", bookId);
+      } catch {}
+      api.updateProgress(bookId, chapterIdx, restoredSentence >= 0 ? restoredSentence : 0).catch(console.error);
     } else {
       api.updateProgress(bookId, chapterIdx, 0).catch(console.error);
     }
@@ -791,20 +795,20 @@ function ReaderContent() {
                 {
                   id: "light" as Theme,
                   label: "Claro",
-                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(110, 196, 184, 0.55), rgba(110, 196, 184, 0)), radial-gradient(60px 50px at 90% 80%, rgba(27, 110, 102, 0.35), rgba(27, 110, 102, 0)), #f5f4ef",
-                  ink: "#1f201d",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(195, 205, 218, 0.6), rgba(195, 205, 218, 0)), radial-gradient(60px 50px at 90% 80%, rgba(165, 178, 192, 0.4), rgba(165, 178, 192, 0)), #f7f8fa",
+                  ink: "#1a1d20",
                 },
                 {
                   id: "sepia" as Theme,
                   label: "Sepia",
-                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(214, 180, 110, 0.60), rgba(214, 180, 110, 0)), radial-gradient(60px 50px at 90% 80%, rgba(47, 106, 95, 0.30), rgba(47, 106, 95, 0)), #f2e9d8",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(214, 185, 150, 0.6), rgba(214, 185, 150, 0)), radial-gradient(60px 50px at 90% 80%, rgba(175, 155, 130, 0.35), rgba(175, 155, 130, 0)), #f4eee4",
                   ink: "#3a2e20",
                 },
                 {
                   id: "dark" as Theme,
                   label: "Oscuro",
-                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(110, 196, 184, 0.35), rgba(110, 196, 184, 0)), radial-gradient(60px 50px at 90% 80%, rgba(27, 110, 102, 0.45), rgba(27, 110, 102, 0)), #161615",
-                  ink: "#e4e1da",
+                  bg: "radial-gradient(60px 50px at 20% 20%, rgba(154, 179, 207, 0.25), rgba(154, 179, 207, 0)), radial-gradient(60px 50px at 90% 80%, rgba(65, 76, 92, 0.45), rgba(65, 76, 92, 0)), #101216",
+                  ink: "#e6e9ed",
                 },
               ].map((t) => {
                 const isActive = theme === t.id;

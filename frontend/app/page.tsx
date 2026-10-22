@@ -104,10 +104,27 @@ export default function HomePage() {
     setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, voice: newVoice } : b)));
   };
 
-  const continueBook = useMemo(
-    () => books.find((b) => b.current_chapter_idx >= 1) || null,
-    [books]
-  );
+  const continueBook = useMemo(() => {
+    if (books.length === 0) return null;
+    // 1. Libro con progreso de cap?tulos
+    const withChapter = books.find((b) => b.current_chapter_idx >= 1);
+    if (withChapter) return withChapter;
+    // 2. Libro iniciado
+    const started = books.find(isStarted);
+    if (started) return started;
+    // 3. ?ltimo libro abierto guardado en sesi?n
+    try {
+      const lastId = localStorage.getItem("letha_last_book_id");
+      if (lastId) {
+        const found = books.find((b) => b.id === lastId);
+        if (found) return found;
+      }
+    } catch {}
+    // 4. Libro le?do recientemente seg?n el backend
+    const recent = books.find((b) => b.last_read_at && b.last_read_at > b.created_at);
+    if (recent) return recent;
+    return null;
+  }, [books]);
 
   useEffect(() => {
     if (!continueBook) {
