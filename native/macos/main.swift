@@ -11,6 +11,8 @@ import WebKit
 
 private let readyPrefix = "LETHA_APP_READY "
 
+private let brandHTML = #"<div class="brand"><div class="logo"><svg viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></svg></div>Letha</div>"#
+
 private let logURL = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Logs/letha.log")
 
@@ -82,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
+        webView.uiDelegate = self
         window.contentView!.addSubview(webView)
 
         backgroundObservation = webView.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] webView, _ in
@@ -200,26 +203,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showStatus(_ text: String) {
-        let html = """
-        <!doctype html><html><body style="margin:0;background:#18181b;color:#a1a1aa;font-family:-apple-system,system-ui;display:flex;align-items:center;justify-content:center;height:100vh;">
-        <div style="text-align:center;">
-          <div style="font-size:24px;font-weight:bold;color:#f59e0b;margin-bottom:8px;">Letha</div>
-          <div style="font-size:13px;">\(text)</div>
-        </div>
-        </body></html>
-        """
-        webView.loadHTMLString(html, baseURL: nil)
+        showPage("""
+        \(brandHTML)
+        <svg class="spinner" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <div class="muted">\(text)</div>
+        """)
     }
 
     private func showError(_ message: String) {
         let escaped = message.replacingOccurrences(of: "\n", with: "<br>")
-        let html = """
-        <!doctype html><html><body style="margin:0;background:#18181b;color:#f87171;font-family:-apple-system,system-ui;padding:40px;">
-        <div style="max-width:500px;margin:auto;border:1px solid #7f1d1d;background:#450a0a;border-radius:16px;padding:24px;">
-          <h2 style="margin:0 0 12px 0;font-size:18px;color:#fca5a5;">Error al iniciar Letha</h2>
-          <div style="font-size:13px;line-height:1.6;color:#fecaca;">\(escaped)</div>
+        showPage("""
+        \(brandHTML)
+        <div class="card">
+          <h2>Error al iniciar Letha</h2>
+          <div class="muted">\(escaped)</div>
         </div>
-        </body></html>
+        """)
+    }
+
+    private func showPage(_ content: String) {
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8"><style>
+        body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#0a1729;color:#eaf1fa;font-family:-apple-system,system-ui;-webkit-font-smoothing:antialiased}
+        svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+        .brand{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700;letter-spacing:-0.025em}
+        .logo{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#0a1729;background:linear-gradient(135deg,#1ea7e8 0%,#64c7f5 100%)}
+        .logo svg{width:20px;height:20px}
+        .spinner{width:32px;height:32px;color:#1ea7e8;animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .muted{font-size:14px;line-height:1.6;color:#93a3b8}
+        .card{max-width:500px;margin:0 24px;padding:24px;border-radius:16px;background:#0e1d33;border:1px solid rgba(248,113,113,0.35)}
+        .card h2{margin:0 0 12px;font-size:18px;color:#f87171}
+        </style></head><body>\(content)</body></html>
         """
         webView.loadHTMLString(html, baseURL: nil)
     }
@@ -253,6 +268,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? handle.close()
         } else {
             try? data.write(to: logURL)
+        }
+    }
+}
+
+extension AppDelegate: WKUIDelegate {
+    func webView(
+        _ webView: WKWebView,
+        runOpenPanelWith parameters: WKOpenPanelParameters,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping ([URL]?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        // WKOpenPanelParameters no expone el atributo accept; la app solo importa PDFs.
+        panel.allowedContentTypes = [.pdf]
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptConfirmPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "Aceptar")
+        alert.addButton(withTitle: "Cancelar")
+        alert.beginSheetModal(for: window) { response in
+            completionHandler(response == .alertFirstButtonReturn)
         }
     }
 }
