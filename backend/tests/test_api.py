@@ -130,6 +130,77 @@ def test_rejects_invalid_voice_name():
     assert res.status_code == 400
 
 
+def test_voices_limited_to_supported_languages(monkeypatch):
+    """
+    Verifica que solo se listen voces de español, inglés, francés, italiano y portugués,
+    en ese orden y con la variante principal de cada idioma primero.
+    """
+    from letha.services import tts as tts_service
+
+    async def fake_list_voices():
+        return [
+            {"ShortName": short_name, "Locale": short_name.rsplit("-", 1)[0], "Gender": "Female"}
+            for short_name in (
+                "pt-BR-FranciscaNeural",
+                "fr-CA-SylvieNeural",
+                "en-GB-SoniaNeural",
+                "de-DE-KatjaNeural",
+                "it-IT-ElsaNeural",
+                "en-AU-NatashaNeural",
+                "es-ES-ElviraNeural",
+                "hi-IN-SwaraNeural",
+                "fr-FR-DeniseNeural",
+                "en-US-AvaNeural",
+                "ja-JP-NanamiNeural",
+                "es-MX-DaliaNeural",
+            )
+        ]
+
+    monkeypatch.setattr(tts_service.edge_tts, "list_voices", fake_list_voices)
+    client = TestClient(api.app)
+
+    res = client.get("/api/voices")
+    assert res.status_code == 200
+    voices = res.json()
+    assert [v["short_name"] for v in voices] == [
+        "es-MX-DaliaNeural",
+        "es-ES-ElviraNeural",
+        "en-US-AvaNeural",
+        "en-AU-NatashaNeural",
+        "en-GB-SoniaNeural",
+        "fr-FR-DeniseNeural",
+        "fr-CA-SylvieNeural",
+        "it-IT-ElsaNeural",
+        "pt-BR-FranciscaNeural",
+    ]
+    sylvie = next(v for v in voices if v["short_name"] == "fr-CA-SylvieNeural")
+    assert "Francés (Canadá)" in sylvie["friendly_name"]
+
+
+def test_voice_preview_speaks_the_voice_language(monkeypatch):
+    """Verifica que la muestra de voz use una frase en el idioma de la voz."""
+    from letha.services import tts as tts_service
+
+    spoken = {}
+
+    async def fake_synthesize(text, voice, speed, output_audio_path, output_alignment_path):
+        spoken[voice] = text
+        output_audio_path.write_bytes(b"mp3")
+        return 0.0, []
+
+    monkeypatch.setattr(tts_service, "synthesize_text_to_audio", fake_synthesize)
+    client = TestClient(api.app)
+
+    for voice in ("fr-FR-DeniseNeural", "it-IT-ElsaNeural", "pt-BR-FranciscaNeural", "en-US-AvaNeural", "es-MX-DaliaNeural"):
+        assert client.get(f"/api/voices/preview?voice={voice}").status_code == 200
+
+    assert spoken["fr-FR-DeniseNeural"].startswith("Bonjour, je suis Denise.")
+    assert spoken["it-IT-ElsaNeural"].startswith("Ciao, sono Elsa.")
+    assert spoken["pt-BR-FranciscaNeural"].startswith("Olá, eu sou Francisca.")
+    assert spoken["en-US-AvaNeural"].startswith("Hello, I am Ava.")
+    assert spoken["es-MX-DaliaNeural"].startswith("Hola, soy Dalia.")
+
+
 def test_upload_read_voice_switch_and_legacy_audio_cleanup():
     database.init_db()
     client = TestClient(api.app)

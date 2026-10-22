@@ -35,6 +35,13 @@ from letha.services import tts as tts_service
 _required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
 _active_jobs: int = 0
 _VOICE_RE = re.compile(r"^[a-zA-Z0-9_-]{3,80}$")
+_PREVIEW_TEXTS = {
+    "en": "Hello, I am {persona}. I will read this book for you.",
+    "es": "Hola, soy {persona}. Te acompañaré en la lectura de este libro.",
+    "fr": "Bonjour, je suis {persona}. Je vais te lire ce livre.",
+    "it": "Ciao, sono {persona}. Ti leggerò questo libro.",
+    "pt": "Olá, eu sou {persona}. Vou ler este livro para você.",
+}
 
 
 def set_token(token: Optional[str]) -> None:
@@ -146,11 +153,8 @@ async def preview_voice(voice: str = DEFAULT_VOICE):
     preview_align = config.AUDIO_DIR / f"preview_{voice}_{tts_service.AUDIO_CACHE_TAG}.json"
     if not preview_file.exists():
         persona = tts_service._extract_persona_name(voice)
-        sample_text = (
-            f"Hello, I am {persona}. I will read this book for you."
-            if voice.lower().startswith("en-")
-            else f"Hola, soy {persona}. Te acompañaré en la lectura de este libro."
-        )
+        template = _PREVIEW_TEXTS.get(voice.split("-")[0].lower(), _PREVIEW_TEXTS["es"])
+        sample_text = template.format(persona=persona)
         _active_jobs += 1
         try:
             await tts_service.synthesize_text_to_audio(

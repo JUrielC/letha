@@ -62,6 +62,10 @@ def get_audio_cache_tag() -> str:
     return AUDIO_CACHE_TAG
 
 
+# El orden define cómo se listan los idiomas; la variante indicada aparece primero en cada uno.
+PRIMARY_LOCALES = {"es": "es-MX", "en": "en-US", "fr": "fr-FR", "it": "it-IT", "pt": "pt-BR"}
+SUPPORTED_LANGUAGES = tuple(PRIMARY_LOCALES)
+
 LOCALE_LABELS = {
     "es-MX": "Español (México)",
     "es-ES": "Español (España)",
@@ -90,11 +94,22 @@ LOCALE_LABELS = {
     "en-AU": "Inglés (Australia)",
     "en-CA": "Inglés (Canadá)",
     "en-IE": "Inglés (Irlanda)",
+    "en-IN": "Inglés (India)",
+    "en-NZ": "Inglés (Nueva Zelanda)",
+    "en-ZA": "Inglés (Sudáfrica)",
+    "en-SG": "Inglés (Singapur)",
+    "en-HK": "Inglés (Hong Kong)",
+    "en-PH": "Inglés (Filipinas)",
+    "en-KE": "Inglés (Kenia)",
+    "en-NG": "Inglés (Nigeria)",
+    "en-TZ": "Inglés (Tanzania)",
     "fr-FR": "Francés (Francia)",
+    "fr-CA": "Francés (Canadá)",
+    "fr-BE": "Francés (Bélgica)",
+    "fr-CH": "Francés (Suiza)",
+    "it-IT": "Italiano (Italia)",
     "pt-BR": "Portugués (Brasil)",
     "pt-PT": "Portugués (Portugal)",
-    "de-DE": "Alemán (Alemania)",
-    "it-IT": "Italiano (Italia)",
 }
 
 
@@ -107,13 +122,16 @@ def _extract_persona_name(short_name: str) -> str:
 
 async def list_available_voices() -> List[Dict[str, str]]:
     """
-    Lista las voces neurales de edge-tts con nombres legibles de persona, idioma y género.
+    Lista las voces neurales de edge-tts de los idiomas soportados con nombres legibles
+    de persona, idioma y género.
     """
     voices = await edge_tts.list_voices()
     formatted = []
     for v in voices:
         short_name = v.get("ShortName", "")
         locale = v.get("Locale", "")
+        if locale.split("-")[0].lower() not in SUPPORTED_LANGUAGES:
+            continue
         gender = v.get("Gender", "")
         persona = _extract_persona_name(short_name)
         lang_label = LOCALE_LABELS.get(locale, locale)
@@ -130,14 +148,14 @@ async def list_available_voices() -> List[Dict[str, str]]:
         )
 
     def sort_key(item: Dict[str, str]):
-        loc = item["locale"].lower()
-        if loc.startswith("es-mx"):
-            return (0, loc, item["name"])
-        elif loc.startswith("es-"):
-            return (1, loc, item["name"])
-        elif loc.startswith("en-"):
-            return (2, loc, item["name"])
-        return (3, loc, item["name"])
+        locale = item["locale"]
+        language = locale.split("-")[0].lower()
+        return (
+            SUPPORTED_LANGUAGES.index(language),
+            locale != PRIMARY_LOCALES[language],
+            locale,
+            item["name"],
+        )
 
     formatted.sort(key=sort_key)
     return formatted

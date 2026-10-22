@@ -1,8 +1,18 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, X, Loader2, FileText, Volume2, User } from "lucide-react";
+import { UploadCloud, X, Loader2, FileText, Volume2, User, Languages } from "lucide-react";
 import { api, VoiceItem } from "@/lib/api";
+
+const LANGUAGES = [
+  { code: "es", label: "Español", defaultVoice: "es-MX-DaliaNeural" },
+  { code: "en", label: "Inglés", defaultVoice: "en-US-AvaNeural" },
+  { code: "fr", label: "Francés", defaultVoice: "fr-FR-DeniseNeural" },
+  { code: "it", label: "Italiano", defaultVoice: "it-IT-ElsaNeural" },
+  { code: "pt", label: "Portugués", defaultVoice: "pt-BR-FranciscaNeural" },
+] as const;
+
+type LanguageCode = (typeof LANGUAGES)[number]["code"];
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -14,7 +24,7 @@ interface UploadModalProps {
 export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [langFilter, setLangFilter] = useState<"es" | "en" | "all">("es");
+  const [langFilter, setLangFilter] = useState<LanguageCode>("es");
   const [selectedVoice, setSelectedVoice] = useState("es-MX-DaliaNeural");
   const [previewing, setPreviewing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,15 +46,16 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
     }
   }, [isOpen, voices.length]);
 
-  const filteredVoices = voices.filter((v) => {
-    if (langFilter === "es") return v.locale.toLowerCase().startsWith("es-");
-    if (langFilter === "en") return v.locale.toLowerCase().startsWith("en-");
-    return true;
-  });
+  const filteredVoices = voices.filter((v) =>
+    v.locale.toLowerCase().startsWith(`${langFilter}-`)
+  );
 
   useEffect(() => {
     if (filteredVoices.length > 0 && !filteredVoices.some((v) => v.short_name === selectedVoice)) {
-      setSelectedVoice(filteredVoices[0].short_name);
+      const preferred = LANGUAGES.find((l) => l.code === langFilter)!.defaultVoice;
+      setSelectedVoice(
+        filteredVoices.some((v) => v.short_name === preferred) ? preferred : filteredVoices[0].short_name
+      );
     }
   }, [langFilter, voices]);
 
@@ -142,10 +153,10 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
 
         <h3 className="text-lg font-bold text-[#eaf1fa] mb-1">Importar libro en PDF</h3>
         <p className="text-sm text-[#93a3b8] mb-4">
-          Selecciona tu PDF y elige la persona que narrará el libro.
+          Selecciona tu PDF, el idioma del libro y la persona que lo narrará.
         </p>
 
-        {/* Selector de Persona / Narrador antes de cargar el libro */}
+        {/* Selector de idioma y narrador antes de cargar el libro */}
         <div
           className="mb-4 p-4 rounded-xl border"
           style={{
@@ -153,40 +164,44 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             borderColor: "var(--line)",
           }}
         >
-          <div className="flex items-center justify-between mb-2.5">
-            <label className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa]">
-              <User className="w-3.5 h-3.5 text-[#1ea7e8]" />
-              <span>Persona que habla (Narrador)</span>
-            </label>
+          <p className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa] mb-2">
+            <Languages className="w-3.5 h-3.5 text-[#1ea7e8]" />
+            <span>Idioma del libro</span>
+          </p>
 
-            <div className="flex items-center gap-1 text-[11px]">
-              {(["es", "en", "all"] as const).map((lf) => {
-                const active = langFilter === lf;
-                return (
-                  <button
-                    key={lf}
-                    type="button"
-                    onClick={() => setLangFilter(lf)}
-                    className={`px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
-                      active
-                        ? "text-[#0a1729]"
-                        : "text-[#93a3b8] hover:text-[#64c7f5]"
-                    }`}
-                    style={
-                      active
-                        ? {
-                            background: "var(--primary-btn-bg)",
-                            color: "var(--primary-btn-text)",
-                          }
-                        : undefined
-                    }
-                  >
-                    {lf === "es" ? "Español" : lf === "en" ? "Inglés" : "Todos"}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Idioma del libro">
+            {LANGUAGES.map(({ code, label }) => {
+              const active = langFilter === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLangFilter(code)}
+                  aria-pressed={active}
+                  className={`px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
+                    active
+                      ? "text-[#0a1729]"
+                      : "text-[#93a3b8] hover:text-[#64c7f5]"
+                  }`}
+                  style={
+                    active
+                      ? {
+                          background: "var(--primary-btn-bg)",
+                          color: "var(--primary-btn-text)",
+                        }
+                      : undefined
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
+
+          <label className="text-xs font-semibold flex items-center gap-1.5 text-[#eaf1fa] mb-2.5">
+            <User className="w-3.5 h-3.5 text-[#1ea7e8]" />
+            <span>Persona que habla (Narrador)</span>
+          </label>
 
           <div className="flex items-center gap-2">
             <select
