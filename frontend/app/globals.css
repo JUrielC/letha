@@ -22,6 +22,8 @@ body.theme-dark {
   --btn-primary-ink: #101216;
   --btn-ghost: rgba(255, 255, 255, 0.06);
   --btn-hover: rgba(255, 255, 255, 0.16);
+  --btn-primary-hover: rgba(255, 255, 255, 0.98);
+  --btn-ghost-hover: rgba(255, 255, 255, 0.16);
   --hover: rgba(255, 255, 255, 0.08);
   --hl: linear-gradient(180deg, rgba(154, 179, 207, 0.14) 0%, rgba(154, 179, 207, 0.25) 100%);
   --hl-ink: #f2f6fa;
@@ -66,6 +68,7 @@ body.theme-dark {
   --slider-thumb-ring: rgba(0, 0, 0, 0.4);
   --add: rgba(255, 255, 255, 0.04);
   --add-border: rgba(255, 255, 255, 0.16);
+  --add-hover: rgba(255, 255, 255, 0.12);
   --dash: rgba(255, 255, 255, 0.25);
   --menu-item-on: rgba(255, 255, 255, 0.1);
   --sample: rgba(0, 0, 0, 0.2);
@@ -90,7 +93,9 @@ body:not(.theme-dark):not(.theme-sepia) {
   --btn-primary: rgba(26, 29, 32, 0.90);
   --btn-primary-ink: #ffffff;
   --btn-ghost: rgba(255, 255, 255, 0.28);
-  --btn-hover: rgba(26, 29, 32, 0.96);
+  --btn-hover: rgba(255, 255, 255, 0.65);
+  --btn-primary-hover: #1e2632;
+  --btn-ghost-hover: rgba(255, 255, 255, 0.65);
   --hover: rgba(255, 255, 255, 0.45);
   --hl: linear-gradient(180deg, rgba(45, 55, 72, 0.10) 0%, rgba(45, 55, 72, 0.18) 100%);
   --hl-ink: #1a1d20;
@@ -133,8 +138,9 @@ body:not(.theme-dark):not(.theme-sepia) {
   --icon-chip: rgba(255, 255, 255, 0.14);
   --logo-hl: rgba(45, 55, 72, 0.14);
   --slider-thumb-ring: rgba(255, 255, 255, 0.9);
-  --add: rgba(255, 255, 255, 0.24);
-  --add-border: rgba(26, 29, 32, 0.2);
+  --add: rgba(255, 255, 255, 0.35);
+  --add-border: rgba(45, 55, 72, 0.22);
+  --add-hover: rgba(255, 255, 255, 0.75);
   --dash: rgba(26, 29, 32, 0.28);
   --menu-item-on: rgba(255, 255, 255, 0.8);
   --sample: rgba(255, 255, 255, 0.55);
@@ -159,7 +165,9 @@ body.theme-sepia {
   --btn-primary: rgba(58, 46, 32, 0.90);
   --btn-primary-ink: #faf4e8;
   --btn-ghost: rgba(255, 250, 240, 0.30);
-  --btn-hover: rgba(58, 46, 32, 0.96);
+  --btn-hover: rgba(255, 250, 240, 0.66);
+  --btn-primary-hover: #3f3326;
+  --btn-ghost-hover: rgba(255, 250, 240, 0.66);
   --hover: rgba(255, 250, 240, 0.45);
   --hl: linear-gradient(180deg, rgba(200, 165, 110, 0.28) 0%, rgba(190, 150, 95, 0.42) 100%);
   --hl-ink: #3a2e20;
@@ -202,8 +210,9 @@ body.theme-sepia {
   --icon-chip: rgba(255, 255, 255, 0.14);
   --logo-hl: rgba(214, 180, 110, 0.4);
   --slider-thumb-ring: rgba(255, 255, 255, 0.9);
-  --add: rgba(255, 250, 240, 0.24);
-  --add-border: rgba(58, 46, 32, 0.22);
+  --add: rgba(255, 250, 240, 0.30);
+  --add-border: rgba(84, 68, 52, 0.24);
+  --add-hover: rgba(255, 250, 240, 0.70);
   --dash: rgba(58, 46, 32, 0.3);
   --menu-item-on: rgba(255, 250, 242, 0.8);
   --sample: rgba(255, 250, 240, 0.6);
@@ -246,8 +255,13 @@ body {
   transform: scale(0.97);
 }
 
-.glbtn:hover {
-  background-color: var(--btn-hover) !important;
+.glbtn:hover,
+.glbtn-ghost:hover {
+  background-color: var(--btn-ghost-hover) !important;
+}
+
+.glbtn-primary:hover {
+  background-color: var(--btn-primary-hover) !important;
 }
 
 .quiet:hover,
@@ -344,13 +358,16 @@ input::placeholder {
   border: 1.5px dashed var(--add-border);
   background: var(--add);
   color: var(--soft);
-  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease, transform 0.14s ease, box-shadow 0.18s ease;
 }
 
 .add-book-cell:hover,
 .add-book-cell.is-dragging {
   border-color: var(--accent) !important;
   color: var(--accent) !important;
+  background-color: var(--add-hover) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px var(--shadow-ambient);
 }
 
 .add-book-cell:hover span,

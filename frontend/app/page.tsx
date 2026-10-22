@@ -349,7 +349,7 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <Link
                   href={`/reader?id=${continueBook.id}`}
-                  className="glbtn inline-flex items-center gap-3 h-12 pr-[22px] pl-2 rounded-full font-medium text-[15px] no-underline"
+                  className="glbtn glbtn-primary inline-flex items-center gap-3 h-12 pr-[22px] pl-2 rounded-full font-medium text-[15px] no-underline"
                   style={{
                     background: "var(--btn-primary)",
                     boxShadow: "var(--ring-primary)",
@@ -368,7 +368,7 @@ export default function HomePage() {
 
                 <Link
                   href={`/reader?id=${continueBook.id}`}
-                  className="glbtn inline-flex items-center gap-2 h-12 px-[18px] rounded-full font-medium text-[15px] no-underline"
+                  className="glbtn glbtn-ghost inline-flex items-center gap-2 h-12 px-[18px] rounded-full font-medium text-[15px] no-underline"
                   style={{
                     background: "var(--btn-ghost)",
                     boxShadow: "var(--ring-ghost)",
@@ -587,12 +587,9 @@ export default function HomePage() {
                 }}
                 onDragLeave={() => setIsDraggingAdd(false)}
                 onDrop={handleAddDrop}
-                className={`add-book-cell glbtn aspect-[2/3] box-border rounded-[8px] flex flex-col items-center justify-center gap-2.5 p-4 text-center cursor-pointer transition select-none ${
+                className={`add-book-cell aspect-[2/3] box-border rounded-[8px] flex flex-col items-center justify-center gap-2.5 p-4 text-center cursor-pointer transition select-none ${
                   isDraggingAdd ? "is-dragging" : ""
                 }`}
-                style={{
-                  background: isDraggingAdd ? "var(--hover)" : "var(--add)",
-                }}
               >
                 <input
                   ref={addInputRef}

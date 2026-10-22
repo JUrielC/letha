@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
-import { AudioLines, Check, MoreVertical, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 
 const COVER_PALETTES = [
   { bg: "#2f4a3a", ink: "#efe9dc" },
@@ -17,31 +17,12 @@ const COVER_PALETTES = [
   { bg: "#5b4a3f", ink: "#efe6da" },
 ];
 
-const LANG_LABELS: Record<string, string> = {
-  es: "Español",
-  en: "English",
-  fr: "Français",
-  it: "Italiano",
-  pt: "Português",
-};
-
 function pickCoverPalette(id: string) {
   let sum = 0;
   for (let i = 0; i < id.length; i++) {
     sum += id.charCodeAt(i);
   }
   return COVER_PALETTES[sum % COVER_PALETTES.length];
-}
-
-function extractPersona(friendlyName?: string, shortName?: string): string {
-  if (friendlyName) {
-    const parts = friendlyName.split(/\s*[—-]\s*/);
-    if (parts[0]) return parts[0].trim();
-  }
-  if (!shortName) return "Narrador";
-  const parts = shortName.split("-");
-  const last = parts[parts.length - 1] || "";
-  return last.replace("Neural", "");
 }
 
 interface BookCardProps {
@@ -61,19 +42,13 @@ export function BookCard({
     book.voice || "es-MX-DaliaNeural"
   );
   const [imgFailed, setImgFailed] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showVoicePicker, setShowVoicePicker] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const bookVoices = voices.filter(
     (v) =>
       v.locale.toLowerCase().startsWith(`${book.language}-`) ||
       v.short_name === selectedVoice
   );
-
-  const matchedVoice = voices.find((v) => v.short_name === selectedVoice);
-  const personaName = extractPersona(matchedVoice?.friendly_name, selectedVoice);
-  const langLabel = LANG_LABELS[book.language] || book.language.toUpperCase();
+  const voiceOptions = bookVoices.length > 0 ? bookVoices : voices;
 
   const totalPages = Math.max(1, book.total_chapters || book.total_pages);
   const currentPage = Math.min(
@@ -98,28 +73,6 @@ export function BookCard({
     await api.updateSettings(book.id, newVoice, book.speed).catch(console.error);
     if (onVoiceChange) onVoiceChange(book.id, newVoice);
   };
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsMenuOpen(false);
-        setShowVoicePicker(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsMenuOpen(false);
-        setShowVoicePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isMenuOpen]);
 
   return (
     <article className="relative flex flex-col gap-3.5 min-w-0">
@@ -161,7 +114,7 @@ export function BookCard({
         />
       </Link>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <h3
@@ -172,24 +125,24 @@ export function BookCard({
               {book.title}
             </h3>
             <p className="m-0 mt-0.5 text-[13px] truncate" style={{ color: "var(--muted)" }}>
-              {langLabel} · {personaName}
+              {book.author || "Autor desconocido"}
             </p>
           </div>
 
           <button
             type="button"
-            aria-label={`Más opciones para ${book.title}`}
+            aria-label={`Eliminar ${book.title}`}
+            title="Eliminar libro"
             onClick={(e) => {
               e.preventDefault();
-              setIsMenuOpen((prev) => !prev);
+              e.stopPropagation();
+              if (confirm(`¿Eliminar "${book.title}" de tu biblioteca?`)) {
+                onDelete(book.id);
+              }
             }}
-            className="quiet shrink-0 w-8 h-8 -mr-1.5 -mt-1 rounded-full flex items-center justify-center cursor-pointer border-0"
-            style={{
-              background: isMenuOpen ? "var(--menu-item-on)" : "transparent",
-              color: "var(--soft)",
-            }}
+            className="quiet shrink-0 w-8 h-8 -mr-1.5 -mt-1 rounded-full flex items-center justify-center cursor-pointer border-0 text-[var(--soft)] hover:text-[var(--danger)] hover:bg-[var(--hover)] transition"
           >
-            <MoreVertical className="w-4 h-4" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
 
@@ -223,88 +176,41 @@ export function BookCard({
             {totalPages} págs. · sin empezar
           </span>
         )}
-      </div>
 
-      {isMenuOpen && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={`Opciones de ${book.title}`}
-          className="glass-strong absolute z-20 right-[-8px] top-[calc(100%-48px)] w-[240px] p-1.5 rounded-[20px] box-border"
-          style={{
-            background: "var(--glass-menu)",
-            boxShadow: "var(--ring-menu)",
-          }}
-        >
-          <div className="relative">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => setShowVoicePicker((prev) => !prev)}
-              className="w-full flex items-center gap-2.5 h-10 px-2.5 border-0 rounded-[14px] text-left cursor-pointer transition"
-              style={{
-                background: showVoicePicker ? "var(--menu-item-on)" : "transparent",
-                color: "var(--ink)",
-                fontSize: "14px",
-              }}
+        {voiceOptions.length > 0 && (
+          <div className="flex flex-col gap-1 pt-2 border-t mt-1" style={{ borderColor: "var(--track)" }}>
+            <label
+              htmlFor={`voice-select-${book.id}`}
+              className="text-[11px] font-medium"
+              style={{ color: "var(--muted)" }}
             >
-              <AudioLines className="w-4 h-4 shrink-0" strokeWidth={1.7} />
-              <span className="flex-1 truncate">Cambiar narrador</span>
-              <span className="text-xs truncate max-w-[80px]" style={{ color: "var(--muted)" }}>
-                {personaName}
-              </span>
-            </button>
-            {showVoicePicker && (
-              <div className="p-2 pt-1 border-t mt-1" style={{ borderColor: "var(--track)" }}>
-                <select
-                  value={selectedVoice}
-                  onChange={(e) => {
-                    handleSelectVoice(e.target.value);
-                    setIsMenuOpen(false);
-                    setShowVoicePicker(false);
-                  }}
-                  className="w-full h-9 text-xs rounded-xl px-2 border-0 text-[var(--ink)] focus:outline-none cursor-pointer"
-                  style={{
-                    background: "var(--glass-seg)",
-                    boxShadow: "var(--ring-seg)",
-                  }}
-                  autoFocus
+              Voz
+            </label>
+            <select
+              id={`voice-select-${book.id}`}
+              value={selectedVoice}
+              onChange={(e) => handleSelectVoice(e.target.value)}
+              className="glass w-full h-[34px] text-xs font-medium rounded-[10px] px-2.5 border-0 cursor-pointer truncate focus:outline-none"
+              style={{
+                background: "var(--glass-seg)",
+                boxShadow: "var(--ring-seg)",
+                color: "var(--ink)",
+              }}
+              title="Cambiar la persona que narra este libro"
+            >
+              {voiceOptions.map((v) => (
+                <option
+                  key={v.short_name}
+                  value={v.short_name}
+                  className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                 >
-                  {bookVoices.map((v) => (
-                    <option
-                      key={v.short_name}
-                      value={v.short_name}
-                      className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                    >
-                      {v.friendly_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                  {v.friendly_name}
+                </option>
+              ))}
+            </select>
           </div>
-
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setIsMenuOpen(false);
-              if (confirm(`¿Eliminar "${book.title}" de tu biblioteca?`)) {
-                onDelete(book.id);
-              }
-            }}
-            className="quiet w-full flex items-center gap-2.5 h-10 px-2.5 border-0 rounded-[14px] text-left cursor-pointer"
-            style={{
-              background: "transparent",
-              color: "var(--danger)",
-              fontSize: "14px",
-            }}
-          >
-            <Trash2 className="w-4 h-4 shrink-0" strokeWidth={1.7} />
-            <span>Quitar de la biblioteca</span>
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </article>
   );
 }
