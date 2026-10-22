@@ -23,7 +23,16 @@ DEFAULT_PAGE_PARTS = 5
 # Velocidad base nativa para edge-tts (por defecto 85% de la velocidad estándar = -15%)
 DEFAULT_EDGE_BASE_SPEED = 0.85
 EDGE_BASE_SPEED = DEFAULT_EDGE_BASE_SPEED
+DEFAULT_BOUNDARY_TYPE = "SentenceBoundary"
+BOUNDARY_TYPE = DEFAULT_BOUNDARY_TYPE
 AUDIO_CACHE_TAG = f"{EDGE_BASE_SPEED:.2f}"
+
+
+def _refresh_cache_tag() -> str:
+    global AUDIO_CACHE_TAG
+    suffix = "_wb" if BOUNDARY_TYPE == "WordBoundary" else ""
+    AUDIO_CACHE_TAG = f"{EDGE_BASE_SPEED:.2f}{suffix}"
+    return AUDIO_CACHE_TAG
 
 
 def get_edge_base_speed() -> float:
@@ -31,11 +40,22 @@ def get_edge_base_speed() -> float:
 
 
 def set_edge_base_speed(speed: float) -> float:
-    global EDGE_BASE_SPEED, AUDIO_CACHE_TAG
+    global EDGE_BASE_SPEED
     clamped = round(max(0.5, min(1.5, float(speed))), 2)
     EDGE_BASE_SPEED = clamped
-    AUDIO_CACHE_TAG = f"{clamped:.2f}"
+    _refresh_cache_tag()
     return clamped
+
+
+def get_boundary_type() -> str:
+    return BOUNDARY_TYPE
+
+
+def set_boundary_type(boundary: str) -> str:
+    global BOUNDARY_TYPE
+    BOUNDARY_TYPE = "WordBoundary" if boundary == "WordBoundary" else "SentenceBoundary"
+    _refresh_cache_tag()
+    return BOUNDARY_TYPE
 
 
 def get_audio_cache_tag() -> str:
@@ -155,15 +175,79 @@ def partition_sentence_indices(total_sentences: int, total_parts: int = DEFAULT_
     return groups
 
 
+def _norm_token(token: str) -> str:
+    return re.sub(r"[^\w]", "", token.lower())
+
+
+def _align_words_to_sentences(
+    sentence_texts: List[str],
+    raw_boundaries: List[Dict[str, Any]],
+    duration: float,
+) -> List[Tuple[float, float, List[Dict[str, Any]]]]:
+    n = len(sentence_texts)
+    raw_end = raw_boundaries[-1]["end"] if raw_boundaries else 0.0
+    scale = (duration / raw_end) if raw_end > duration and raw_end > 0 else 1.0
+
+    scaled_words = [
+        {
+            "text": b["text"],
+            "start": round(b["start"] * scale, 3),
+            "end": round(max(b["start"], b["end"]) * scale, 3),
+        }
+        for b in raw_boundaries
+    ]
+
+    results: List[Tuple[float, float, List[Dict[str, Any]]]] = []
+    cursor = 0
+    total_w = len(scaled_words)
+
+    for idx, s_text in enumerate(sentence_texts):
+        if idx == n - 1:
+            sent_words = scaled_words[cursor:]
+            cursor = total_w
+        else:
+            start_cursor = cursor
+            tokens = [t for t in re.findall(r"[\w'’]+", s_text) if _norm_token(t)]
+            max_cursor = max(start_cursor, total_w - (n - 1 - idx))
+            for t in tokens:
+                if cursor >= max_cursor:
+                    break
+                nt = _norm_token(t)
+                matched_offset = None
+                for lookahead in range(min(4, max_cursor - cursor)):
+                    nw = _norm_token(scaled_words[cursor + lookahead]["text"])
+                    if nw == nt or (nw and nt and (nw in nt or nt in nw)):
+                        matched_offset = lookahead
+                        break
+                if matched_offset is not None:
+                    cursor += matched_offset + 1
+                else:
+                    cursor += 1
+            sent_words = scaled_words[start_cursor:cursor]
+
+        if sent_words:
+            s_start = sent_words[0]["start"]
+            s_end = sent_words[-1]["end"]
+            if idx == n - 1 and duration > s_end:
+                s_end = round(duration, 3)
+            results.append((s_start, max(s_start, s_end), sent_words))
+        else:
+            prev_end = results[-1][1] if results else 0.0
+            results.append((prev_end, prev_end, []))
+
+    return results
+
+
 async def synthesize_sentence_group(
     sentence_texts: List[str],
     voice: str = DEFAULT_VOICE,
     speed: float = 1.0,
-) -> Tuple[bytes, float, List[Tuple[float, float]]]:
+) -> Tuple[bytes, float, List[Any]]:
     """
     Sintetiza un grupo de oraciones completas en una sola solicitud a edge-tts y
-    devuelve (audio_bytes, duration_seconds, [(start, end), ...]) alineado 1 a 1
-    con `sentence_texts`.
+    devuelve (audio_bytes, duration_seconds, timings) alineado 1 a 1 con `sentence_texts`.
+    En modo WordBoundary, cada elemento de `timings` incluye también la lista de palabras
+    con sus tiempos `(start, end, words)`.
     """
     clean_texts = [s.strip() for s in sentence_texts if s.strip()]
     if not clean_texts:
@@ -171,14 +255,19 @@ async def synthesize_sentence_group(
 
     joined_text = " ".join(clean_texts)
     rate_str = format_rate(speed)
+    active_boundary = BOUNDARY_TYPE
     semaphore = asyncio.Semaphore(1)
     audio_bytes, raw_boundaries = await _synthesize_single_chunk(
-        joined_text, voice, rate_str, semaphore
+        joined_text, voice, rate_str, semaphore, boundary=active_boundary
     )
 
     duration = len(audio_bytes) / BYTES_PER_SECOND
     if duration <= 0.0 and raw_boundaries:
         duration = raw_boundaries[-1]["end"]
+
+    if active_boundary == "WordBoundary" and raw_boundaries:
+        word_timings = _align_words_to_sentences(sentence_texts, raw_boundaries, duration)
+        return bytes(audio_bytes), round(duration, 3), word_timings
 
     n = len(sentence_texts)
     timings: List[Tuple[float, float]] = []
@@ -241,15 +330,19 @@ async def _synthesize_single_chunk(
     voice: str,
     rate_str: str,
     semaphore: asyncio.Semaphore,
+    boundary: str = "SentenceBoundary",
 ) -> Tuple[bytearray, List[Dict[str, Any]]]:
     """
     Sintetiza un fragmento individual con reintentos automáticos ante fallos de red.
     """
+    boundary_arg = "WordBoundary" if boundary == "WordBoundary" else "SentenceBoundary"
     async with semaphore:
         last_err = None
         for attempt in range(3):
             try:
-                communicate = edge_tts.Communicate(chunk_text, voice, rate=rate_str)
+                communicate = edge_tts.Communicate(
+                    chunk_text, voice, rate=rate_str, boundary=boundary_arg
+                )
                 audio_bytes = bytearray()
                 sentences: List[Dict[str, Any]] = []
 
@@ -257,7 +350,7 @@ async def _synthesize_single_chunk(
                     c_type = chunk.get("type")
                     if c_type == "audio":
                         audio_bytes.extend(chunk.get("data", b""))
-                    elif c_type == "SentenceBoundary":
+                    elif c_type in ("SentenceBoundary", "WordBoundary"):
                         raw_offset = chunk.get("offset", 0)
                         raw_duration = chunk.get("duration", 0)
                         sentence_text = chunk.get("text", "").strip()

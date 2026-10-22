@@ -27,6 +27,7 @@ import {
   ChapterDetail,
   SentenceItem,
   VoiceItem,
+  WordTiming,
   getBaseUrl,
 } from "@/lib/api";
 
@@ -62,6 +63,10 @@ function ReaderContent() {
   const [fontSize, setFontSize] = useState<FontSize>("base");
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
+  const [boundaryType, setBoundaryType] = useState<"SentenceBoundary" | "WordBoundary">(
+    "SentenceBoundary"
+  );
+  const [activeWordKey, setActiveWordKey] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
@@ -89,7 +94,12 @@ function ReaderContent() {
     api.getVoices().then(setVoices).catch(console.error);
     api
       .getAppSettings()
-      .then((s) => setAutoAdvanceSentence(s.auto_advance_sentence ?? true))
+      .then((s) => {
+        setAutoAdvanceSentence(s.auto_advance_sentence ?? true);
+        setBoundaryType(
+          s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary"
+        );
+      })
       .catch(console.error);
   }, []);
 
@@ -331,26 +341,27 @@ function ReaderContent() {
     };
   }, [bookId, currentChapterIdx, selectedVoice]);
 
-  // En modo "Solo al clickear", pausar con precisión al terminar la oración actual
+  // En modo "Solo al clickear" o al seleccionar una palabra individual, pausar con precisión al terminar el segmento
   useEffect(() => {
-    if (!isPlaying || autoAdvanceSentence) return;
+    if (!isPlaying) return;
+    if (autoAdvanceSentence && singleSentenceEndRef.current === null) return;
 
     const checkBoundary = () => {
       const audio = audioRef.current;
       if (!audio) return;
       const stopEnd =
         singleSentenceEndRef.current ??
-        (activeSentenceIdx >= 0
+        (!autoAdvanceSentence && activeSentenceIdx >= 0
           ? chapter?.sentences[activeSentenceIdx]?.end ?? null
           : null);
-      if (typeof stopEnd === "number" && audio.currentTime >= stopEnd - 0.03) {
+      if (typeof stopEnd === "number" && audio.currentTime >= stopEnd - 0.02) {
         audio.pause();
         setIsPlaying(false);
         singleSentenceEndRef.current = null;
       }
     };
 
-    const timer = window.setInterval(checkBoundary, 25);
+    const timer = window.setInterval(checkBoundary, 20);
     return () => window.clearInterval(timer);
   }, [isPlaying, autoAdvanceSentence, activeSentenceIdx, chapter]);
 
@@ -407,6 +418,7 @@ function ReaderContent() {
   // Clic en una oración: saltar audio a esa posición si su fragmento ya está cargado
   const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
     setActiveSentenceIdx(sIdx);
+    setActiveWordKey(null);
     if (bookId && currentChapterIdx !== null) {
       api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
     }
@@ -421,6 +433,93 @@ function ReaderContent() {
       audioRef.current.play().catch(console.error);
       setIsPlaying(true);
     }
+  };
+
+  // Clic en una palabra individual (modo WordBoundary): reproducir únicamente esa palabra
+  const handleWordClick = (
+    sentence: SentenceItem,
+    sIdx: number,
+    word: WordTiming,
+    wIdx: number,
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    setActiveSentenceIdx(sIdx);
+    setActiveWordKey(`${sIdx}:${wIdx}`);
+    if (bookId && currentChapterIdx !== null) {
+      api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
+    }
+
+    if (audioRef.current) {
+      const startSec = Math.max(0, word.start - 0.02);
+      singleSentenceEndRef.current = word.end + 0.04;
+      audioRef.current.currentTime = startSec;
+      setCurrentTime(startSec);
+      audioRef.current.play().catch(console.error);
+      setIsPlaying(true);
+    }
+  };
+
+  const renderSentenceContent = (s: SentenceItem, sentIdx: number) => {
+    if (boundaryType !== "WordBoundary" || !s.words || s.words.length === 0) {
+      return <>{s.text} </>;
+    }
+
+    const parts = s.text.split(/([A-Za-zÀ-ÖØ-öø-ÿ0-9'’]+)/);
+    let wCursor = 0;
+    const norm = (val: string) => val.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    return (
+      <>
+        {parts.map((part, pIdx) => {
+          if (pIdx % 2 === 0 || !norm(part)) {
+            return <React.Fragment key={pIdx}>{part}</React.Fragment>;
+          }
+
+          let matchedIdx = -1;
+          const nt = norm(part);
+          for (let k = 0; k < Math.min(3, s.words!.length - wCursor); k++) {
+            const nw = norm(s.words![wCursor + k].text);
+            if (nw === nt || (nw && nt && (nw.includes(nt) || nt.includes(nw)))) {
+              matchedIdx = wCursor + k;
+              wCursor = matchedIdx + 1;
+              break;
+            }
+          }
+          if (matchedIdx === -1 && wCursor < s.words!.length) {
+            matchedIdx = wCursor++;
+          }
+
+          if (matchedIdx === -1) {
+            return <React.Fragment key={pIdx}>{part}</React.Fragment>;
+          }
+
+          const wordTiming = s.words![matchedIdx];
+          const wordKey = `${sentIdx}:${matchedIdx}`;
+          const isWordPlayingNow =
+            isPlaying &&
+            sentIdx === activeSentenceIdx &&
+            currentTime >= wordTiming.start - 0.03 &&
+            currentTime <= wordTiming.end + 0.04;
+          const isWordSelected = activeWordKey === wordKey || isWordPlayingNow;
+
+          return (
+            <span
+              key={pIdx}
+              onClick={(e) => handleWordClick(s, sentIdx, wordTiming, matchedIdx, e)}
+              className={`rounded px-0.5 transition-colors cursor-pointer ${
+                isWordSelected
+                  ? "bg-amber-500 text-white font-semibold"
+                  : "hover:bg-amber-500/20 hover:underline decoration-amber-500"
+              }`}
+              title={`Escuchar "${wordTiming.text}" (${wordTiming.start.toFixed(2)}s)`}
+            >
+              {part}
+            </span>
+          );
+        })}{" "}
+      </>
+    );
   };
 
   // Controles de reproducción
@@ -736,11 +835,13 @@ function ReaderContent() {
                     }`}
                     title={
                       isVoiceReady
-                        ? `Escuchar desde ${(s.start as number).toFixed(1)}s`
+                        ? boundaryType === "WordBoundary"
+                          ? "Haz clic en una palabra para escucharla o en la frase"
+                          : `Escuchar desde ${(s.start as number).toFixed(1)}s`
                         : "Cargando voz para este fragmento..."
                     }
                   >
-                    {s.text}{" "}
+                    {renderSentenceContent(s, idx)}
                   </span>
                 );
               })}

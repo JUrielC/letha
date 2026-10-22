@@ -104,6 +104,7 @@ def get_app_settings():
     return AppSettings(
         edge_base_speed=database.get_edge_base_speed(),
         auto_advance_sentence=database.get_auto_advance_sentence(),
+        boundary_type=database.get_boundary_type(),
     )
 
 
@@ -119,7 +120,16 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.auto_advance_sentence is not None
         else database.get_auto_advance_sentence()
     )
-    return AppSettings(edge_base_speed=speed, auto_advance_sentence=auto_adv)
+    b_type = (
+        database.set_boundary_type(payload.boundary_type)
+        if payload.boundary_type is not None
+        else database.get_boundary_type()
+    )
+    return AppSettings(
+        edge_base_speed=speed,
+        auto_advance_sentence=auto_adv,
+        boundary_type=b_type,
+    )
 
 
 @app.get("/api/voices", response_model=List[VoiceItem])
@@ -367,9 +377,19 @@ async def synthesize_chapter(
 
         for idx_in_group, sent_idx in enumerate(p_indices):
             if idx_in_group < len(p_timings):
-                rel_start, rel_end = p_timings[idx_in_group]
+                t_item = p_timings[idx_in_group]
+                rel_start, rel_end = t_item[0], t_item[1]
                 progressive_sentences[sent_idx]["start"] = round(time_offset + rel_start, 3)
                 progressive_sentences[sent_idx]["end"] = round(time_offset + rel_end, 3)
+                if len(t_item) > 2 and t_item[2]:
+                    progressive_sentences[sent_idx]["words"] = [
+                        {
+                            "text": w["text"],
+                            "start": round(time_offset + w["start"], 3),
+                            "end": round(time_offset + w["end"], 3),
+                        }
+                        for w in t_item[2]
+                    ]
 
         combined_audio.extend(p_bytes)
         time_offset += len(p_bytes) / tts_service.BYTES_PER_SECOND

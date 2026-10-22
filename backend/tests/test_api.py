@@ -325,25 +325,53 @@ def test_edge_tts_default_rate_is_85_percent():
     assert res_get.status_code == 200
     assert res_get.json()["edge_base_speed"] == 0.85
     assert res_get.json()["auto_advance_sentence"] is True
+    assert res_get.json()["boundary_type"] == "SentenceBoundary"
     assert tts_service.EDGE_BASE_SPEED == 0.85
     assert tts_service.format_rate(1.0) == "-15%"
 
-    # Cambiar velocidad nativa a 90% (-10%) y modo solo al clickear desde el endpoint de configuración
+    # Cambiar velocidad nativa a 90% (-10%), modo solo al clickear y WordBoundary
     res_put = client.put(
         "/api/settings",
-        json={"edge_base_speed": 0.90, "auto_advance_sentence": False},
+        json={
+            "edge_base_speed": 0.90,
+            "auto_advance_sentence": False,
+            "boundary_type": "WordBoundary",
+        },
     )
     assert res_put.status_code == 200
     assert res_put.json()["edge_base_speed"] == 0.90
     assert res_put.json()["auto_advance_sentence"] is False
+    assert res_put.json()["boundary_type"] == "WordBoundary"
     assert tts_service.format_rate(1.0) == "-10%"
-    assert tts_service.AUDIO_CACHE_TAG == "0.90"
+    assert tts_service.AUDIO_CACHE_TAG == "0.90_wb"
 
-    # Restaurar al 85% y lectura en automático por defecto
+    # Verificar alineación de palabras por oración en modo WordBoundary
+    aligned = tts_service._align_words_to_sentences(
+        ["Hello world.", "It works."],
+        [
+            {"text": "Hello", "start": 0.1, "end": 0.4},
+            {"text": "world", "start": 0.45, "end": 0.8},
+            {"text": "It", "start": 1.0, "end": 1.2},
+            {"text": "works", "start": 1.25, "end": 1.7},
+        ],
+        1.8,
+    )
+    assert len(aligned) == 2
+    assert len(aligned[0][2]) == 2
+    assert aligned[0][2][0]["text"] == "Hello"
+    assert len(aligned[1][2]) == 2
+    assert aligned[1][2][1]["text"] == "works"
+
+    # Restaurar al 85%, lectura en automático y SentenceBoundary por defecto
     client.put(
         "/api/settings",
-        json={"edge_base_speed": 0.85, "auto_advance_sentence": True},
+        json={
+            "edge_base_speed": 0.85,
+            "auto_advance_sentence": True,
+            "boundary_type": "SentenceBoundary",
+        },
     )
     assert tts_service.format_rate(1.0) == "-15%"
+    assert tts_service.AUDIO_CACHE_TAG == "0.85"
 
 

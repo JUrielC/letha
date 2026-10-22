@@ -8,11 +8,18 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class WordTiming(BaseModel):
+    text: str
+    start: float
+    end: float
+
+
 class SentenceItem(BaseModel):
     index: int
     text: str
     start: Optional[float] = None
     end: Optional[float] = None
+    words: Optional[List[WordTiming]] = None
 
 
 class ChapterSummary(BaseModel):
@@ -83,10 +90,12 @@ class VoiceItem(BaseModel):
 class AppSettings(BaseModel):
     edge_base_speed: float = 0.85
     auto_advance_sentence: bool = True
+    boundary_type: str = "SentenceBoundary"
 
 
 class UpdateAppSettingsRequest(BaseModel):
     edge_base_speed: Optional[float] = Field(default=None, ge=0.5, le=1.5)
     auto_advance_sentence: Optional[bool] = None
+    boundary_type: Optional[str] = None
 
 

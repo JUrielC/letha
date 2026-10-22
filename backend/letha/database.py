@@ -88,16 +88,29 @@ def init_db():
             )
         tts_service.set_edge_base_speed(saved_base_speed)
 
-        # Limpiar referencias en DB a audios generados con otra velocidad base nativa
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('auto_advance_sentence', '1')"
+        )
+        row_boundary = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'boundary_type'"
+        ).fetchone()
+        if row_boundary and row_boundary["value"] in ("SentenceBoundary", "WordBoundary"):
+            saved_boundary = row_boundary["value"]
+        else:
+            saved_boundary = tts_service.DEFAULT_BOUNDARY_TYPE
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('boundary_type', ?)",
+                (saved_boundary,),
+            )
+        tts_service.set_boundary_type(saved_boundary)
+
+        # Limpiar referencias en DB a audios generados con otra velocidad base o modo de límites
         conn.execute(
             f"""
             UPDATE chapters
             SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
             WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
             """
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('auto_advance_sentence', '1')"
         )
         _migrate_reassemble_existing_books(conn)
         conn.commit()
@@ -159,6 +172,37 @@ def set_auto_advance_sentence(enabled: bool) -> bool:
         )
         conn.commit()
     return bool(enabled)
+
+
+def get_boundary_type() -> str:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'boundary_type'"
+        ).fetchone()
+        if row and row["value"] in ("SentenceBoundary", "WordBoundary"):
+            return tts_service.set_boundary_type(row["value"])
+    return tts_service.get_boundary_type()
+
+
+def set_boundary_type(boundary: str) -> str:
+    normalized = tts_service.set_boundary_type(boundary)
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES ('boundary_type', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (normalized,),
+        )
+        conn.execute(
+            f"""
+            UPDATE chapters
+            SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
+            WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
+            """
+        )
+        conn.commit()
+    return normalized
 
 
 def _migrate_reassemble_existing_books(conn: sqlite3.Connection) -> None:
@@ -360,9 +404,19 @@ def get_chapter(
                         p_timings = meta.get("timings", [])
                         for idx_in_group, sent_idx in enumerate(p_indices):
                             if idx_in_group < len(p_timings):
-                                rel_start, rel_end = p_timings[idx_in_group]
+                                t_item = p_timings[idx_in_group]
+                                rel_start, rel_end = t_item[0], t_item[1]
                                 raw_items[sent_idx]["start"] = round(time_offset + rel_start, 3)
                                 raw_items[sent_idx]["end"] = round(time_offset + rel_end, 3)
+                                if len(t_item) > 2 and t_item[2]:
+                                    raw_items[sent_idx]["words"] = [
+                                        {
+                                            "text": w["text"],
+                                            "start": round(time_offset + w["start"], 3),
+                                            "end": round(time_offset + w["end"], 3),
+                                        }
+                                        for w in t_item[2]
+                                    ]
                         combined_audio.extend(p_bytes)
                         time_offset += len(p_bytes) / tts_service.BYTES_PER_SECOND
 

@@ -2,11 +2,18 @@
  * Cliente HTTP para comunicarse con el backend de Letha.
  */
 
+export interface WordTiming {
+  text: string;
+  start: number;
+  end: number;
+}
+
 export interface SentenceItem {
   index: number;
   text: string;
   start?: number | null;
   end?: number | null;
+  words?: WordTiming[] | null;
 }
 
 export interface ChapterSummary {
@@ -62,6 +69,7 @@ export interface VoiceItem {
 export interface AppSettings {
   edge_base_speed: number;
   auto_advance_sentence: boolean;
+  boundary_type: "SentenceBoundary" | "WordBoundary";
 }
 
 declare global {
@@ -124,6 +132,7 @@ export const api = {
   updateAppSettings: (payload: {
     edge_base_speed?: number;
     auto_advance_sentence?: boolean;
+    boundary_type?: "SentenceBoundary" | "WordBoundary";
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",
