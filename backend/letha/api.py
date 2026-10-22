@@ -20,9 +20,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from letha import config, database
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import (
+    AppSettings,
     BookDetail,
     BookSummary,
     ChapterDetail,
+    UpdateAppSettingsRequest,
     UpdateBookSettingsRequest,
     UpdateProgressRequest,
     VoiceItem,
@@ -97,6 +99,29 @@ def health():
     return {"status": "ok", "app": "letha"}
 
 
+@app.get("/api/settings", response_model=AppSettings)
+def get_app_settings():
+    return AppSettings(
+        edge_base_speed=database.get_edge_base_speed(),
+        auto_advance_sentence=database.get_auto_advance_sentence(),
+    )
+
+
+@app.put("/api/settings", response_model=AppSettings)
+def update_app_settings(payload: UpdateAppSettingsRequest):
+    speed = (
+        database.set_edge_base_speed(payload.edge_base_speed)
+        if payload.edge_base_speed is not None
+        else database.get_edge_base_speed()
+    )
+    auto_adv = (
+        database.set_auto_advance_sentence(payload.auto_advance_sentence)
+        if payload.auto_advance_sentence is not None
+        else database.get_auto_advance_sentence()
+    )
+    return AppSettings(edge_base_speed=speed, auto_advance_sentence=auto_adv)
+
+
 @app.get("/api/voices", response_model=List[VoiceItem])
 async def get_voices():
     voices = await tts_service.list_available_voices()
@@ -107,13 +132,13 @@ async def get_voices():
 async def preview_voice(voice: str = DEFAULT_VOICE):
     global _active_jobs
     voice = _validate_voice_name(voice)
-    preview_file = config.AUDIO_DIR / f"preview_{voice}.mp3"
-    preview_align = config.AUDIO_DIR / f"preview_{voice}.json"
+    preview_file = config.AUDIO_DIR / f"preview_{voice}_{tts_service.AUDIO_CACHE_TAG}.mp3"
+    preview_align = config.AUDIO_DIR / f"preview_{voice}_{tts_service.AUDIO_CACHE_TAG}.json"
     if not preview_file.exists():
         persona = tts_service._extract_persona_name(voice)
         sample_text = (
             f"Hello, I am {persona}. I will read this book for you."
-            if tts_service.voice_locale(voice).lower().startswith("en-")
+            if voice.lower().startswith("en-")
             else f"Hola, soy {persona}. Te acompañaré en la lectura de este libro."
         )
         _active_jobs += 1
@@ -266,9 +291,9 @@ async def synthesize_chapter(
     if not base_texts:
         base_texts = [s.text for s in chapter.sentences if s.text]
 
-    # Siempre sintetizamos a velocidad base 1.0x; el cambio de velocidad se aplica
-    # mediante playbackRate en el reproductor HTML5.
-    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_1.00"
+    # Sintetizamos a velocidad base nativa del 85% en edge-tts (-15%); el cambio de velocidad
+    # adicional elegido por el usuario se aplica mediante playbackRate en el reproductor HTML5.
+    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_{tts_service.AUDIO_CACHE_TAG}"
     audio_path = config.AUDIO_DIR / f"{base_prefix}.mp3"
     alignment_path = config.AUDIO_DIR / f"{base_prefix}.json"
     partial_audio_path = config.AUDIO_DIR / f"{base_prefix}.partial.mp3"
@@ -401,7 +426,7 @@ def get_chapter_audio(book_id: str, chapter_idx: int, voice: Optional[str] = Non
         raise HTTPException(status_code=404, detail="Libro no encontrado.")
 
     target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
-    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_1.00"
+    base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_{tts_service.AUDIO_CACHE_TAG}"
     full_path = config.AUDIO_DIR / f"{base_prefix}.mp3"
     partial_path = config.AUDIO_DIR / f"{base_prefix}.partial.mp3"
 

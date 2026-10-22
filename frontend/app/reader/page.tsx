@@ -19,6 +19,7 @@ import {
   Type,
   Volume2,
   List,
+  Settings,
 } from "lucide-react";
 import {
   api,
@@ -60,6 +61,7 @@ function ReaderContent() {
   const [theme, setTheme] = useState<Theme>("light");
   const [fontSize, setFontSize] = useState<FontSize>("base");
   const [isTocOpen, setIsTocOpen] = useState(false);
+  const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
@@ -68,6 +70,7 @@ function ReaderContent() {
   const resumePlayAfterSwapRef = useRef<boolean>(false);
   const isPlayingRef = useRef<boolean>(false);
   const isInitialLoadRef = useRef<boolean>(true);
+  const singleSentenceEndRef = useRef<number | null>(null);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -82,8 +85,12 @@ function ReaderContent() {
     const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
     setFontSize(savedFont);
 
-    // Cargar voces
+    // Cargar voces y configuración de la app
     api.getVoices().then(setVoices).catch(console.error);
+    api
+      .getAppSettings()
+      .then((s) => setAutoAdvanceSentence(s.auto_advance_sentence ?? true))
+      .catch(console.error);
   }, []);
 
   const applyTheme = (t: Theme) => {
@@ -324,6 +331,29 @@ function ReaderContent() {
     };
   }, [bookId, currentChapterIdx, selectedVoice]);
 
+  // En modo "Solo al clickear", pausar con precisión al terminar la oración actual
+  useEffect(() => {
+    if (!isPlaying || autoAdvanceSentence) return;
+
+    const checkBoundary = () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      const stopEnd =
+        singleSentenceEndRef.current ??
+        (activeSentenceIdx >= 0
+          ? chapter?.sentences[activeSentenceIdx]?.end ?? null
+          : null);
+      if (typeof stopEnd === "number" && audio.currentTime >= stopEnd - 0.03) {
+        audio.pause();
+        setIsPlaying(false);
+        singleSentenceEndRef.current = null;
+      }
+    };
+
+    const timer = window.setInterval(checkBoundary, 25);
+    return () => window.clearInterval(timer);
+  }, [isPlaying, autoAdvanceSentence, activeSentenceIdx, chapter]);
+
   // Sincronización Karaoke: Detectar oración activa según currentTime
   useEffect(() => {
     if (
@@ -337,6 +367,10 @@ function ReaderContent() {
     }
     // Evitar que currentTime=0 al montar en pausa pise la oración restaurada
     if (!isPlaying && currentTime === 0 && activeSentenceIdx > 0) {
+      return;
+    }
+    // En modo "Solo al clickear", mientras se reproduce la oración elegida, mantener el foco en ella
+    if (!autoAdvanceSentence && singleSentenceEndRef.current !== null) {
       return;
     }
 
@@ -360,7 +394,15 @@ function ReaderContent() {
         elem.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [currentTime, chapter, activeSentenceIdx, isPlaying, bookId, currentChapterIdx]);
+  }, [
+    currentTime,
+    chapter,
+    activeSentenceIdx,
+    isPlaying,
+    bookId,
+    currentChapterIdx,
+    autoAdvanceSentence,
+  ]);
 
   // Clic en una oración: saltar audio a esa posición si su fragmento ya está cargado
   const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
@@ -370,12 +412,14 @@ function ReaderContent() {
     }
 
     if (typeof sentence.start === "number" && audioRef.current) {
+      singleSentenceEndRef.current =
+        !autoAdvanceSentence && typeof sentence.end === "number"
+          ? sentence.end
+          : null;
       audioRef.current.currentTime = sentence.start;
       setCurrentTime(sentence.start);
-      if (!isPlaying) {
-        audioRef.current.play().catch(console.error);
-        setIsPlaying(true);
-      }
+      audioRef.current.play().catch(console.error);
+      setIsPlaying(true);
     }
   };
 
@@ -385,7 +429,31 @@ function ReaderContent() {
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
+      singleSentenceEndRef.current = null;
     } else {
+      if (!autoAdvanceSentence && chapter?.sentences?.length) {
+        const targetIdx = activeSentenceIdx >= 0 ? activeSentenceIdx : 0;
+        const targetSentence = chapter.sentences[targetIdx];
+        if (
+          targetSentence &&
+          typeof targetSentence.start === "number" &&
+          typeof targetSentence.end === "number"
+        ) {
+          if (activeSentenceIdx < 0) {
+            setActiveSentenceIdx(0);
+          }
+          if (
+            audioRef.current.currentTime < targetSentence.start ||
+            audioRef.current.currentTime >= targetSentence.end - 0.05
+          ) {
+            audioRef.current.currentTime = targetSentence.start;
+            setCurrentTime(targetSentence.start);
+          }
+          singleSentenceEndRef.current = targetSentence.end;
+        }
+      } else {
+        singleSentenceEndRef.current = null;
+      }
       audioRef.current.play().catch(console.error);
       setIsPlaying(true);
     }
@@ -533,6 +601,14 @@ function ReaderContent() {
               {theme === "sepia" && <Coffee className="w-4 h-4 text-amber-700" />}
               {theme === "dark" && <Moon className="w-4 h-4 text-indigo-400" />}
             </button>
+
+            <Link
+              href={`/settings?bookId=${bookId}`}
+              className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition"
+              title="Configuración de la app"
+            >
+              <Settings className="w-4 h-4" />
+            </Link>
 
             <select
               value={selectedVoice || "es-MX-DaliaNeural"}

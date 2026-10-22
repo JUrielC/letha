@@ -78,3 +78,15 @@ class VoiceItem(BaseModel):
     gender: str
     locale: str
     friendly_name: str
+
+
+class AppSettings(BaseModel):
+    edge_base_speed: float = 0.85
+    auto_advance_sentence: bool = True
+
+
+class UpdateAppSettingsRequest(BaseModel):
+    edge_base_speed: Optional[float] = Field(default=None, ge=0.5, le=1.5)
+    auto_advance_sentence: Optional[bool] = None
+
+

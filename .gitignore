@@ -52,6 +52,3 @@ backend/letha/bin/
 
 # Swift build
 native/macos/build/
-
-# Tests locales del prototipo de Kokoro
-backend/tests/test_kokoro.py

@@ -59,6 +59,11 @@ export interface VoiceItem {
   friendly_name: string;
 }
 
+export interface AppSettings {
+  edge_base_speed: number;
+  auto_advance_sentence: boolean;
+}
+
 declare global {
   interface Window {
     __LETHA__?: { api: string; token: string };
@@ -113,6 +118,18 @@ export const api = {
   },
 
   getVoices: () => request<VoiceItem[]>("/api/voices"),
+
+  getAppSettings: () => request<AppSettings>("/api/settings"),
+
+  updateAppSettings: (payload: {
+    edge_base_speed?: number;
+    auto_advance_sentence?: boolean;
+  }) =>
+    request<AppSettings>("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
 
   getVoicePreviewUrl: (voice: string) =>
     `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,

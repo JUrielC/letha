@@ -150,9 +150,9 @@ def test_upload_read_voice_switch_and_legacy_audio_cleanup():
         for i, s in enumerate(chap0_initial["sentences"])
     ]
 
-    # Simular un audio cacheado a 1.00x para Dalia y comprobar cambio de voz
-    dalia_audio = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_1.00.mp3"
-    dalia_align = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_1.00.json"
+    # Simular un audio cacheado a velocidad base (0.85) para Dalia y comprobar cambio de voz
+    dalia_audio = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.85.mp3"
+    dalia_align = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.85.json"
     dalia_audio.write_bytes(b"fake-mp3")
     dalia_align.write_text(
         json.dumps(aligned_mock),
@@ -312,3 +312,38 @@ def test_incomplete_sentence_carried_over_to_next_page():
 
     # Página 2 comienza con la oración completa unida ("It was a place that she would like.")
     assert chap1_sentences[0] == "It was a place that she would like."
+
+
+def test_edge_tts_default_rate_is_85_percent():
+    """Verifica que la velocidad base nativa de edge-tts sea 85% (-15%) por defecto y sea configurable."""
+    from letha.services import tts as tts_service
+
+    database.init_db()
+    client = TestClient(api.app)
+
+    res_get = client.get("/api/settings")
+    assert res_get.status_code == 200
+    assert res_get.json()["edge_base_speed"] == 0.85
+    assert res_get.json()["auto_advance_sentence"] is True
+    assert tts_service.EDGE_BASE_SPEED == 0.85
+    assert tts_service.format_rate(1.0) == "-15%"
+
+    # Cambiar velocidad nativa a 90% (-10%) y modo solo al clickear desde el endpoint de configuración
+    res_put = client.put(
+        "/api/settings",
+        json={"edge_base_speed": 0.90, "auto_advance_sentence": False},
+    )
+    assert res_put.status_code == 200
+    assert res_put.json()["edge_base_speed"] == 0.90
+    assert res_put.json()["auto_advance_sentence"] is False
+    assert tts_service.format_rate(1.0) == "-10%"
+    assert tts_service.AUDIO_CACHE_TAG == "0.90"
+
+    # Restaurar al 85% y lectura en automático por defecto
+    client.put(
+        "/api/settings",
+        json={"edge_base_speed": 0.85, "auto_advance_sentence": True},
+    )
+    assert tts_service.format_rate(1.0) == "-15%"
+
+

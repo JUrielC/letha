@@ -64,17 +64,101 @@ def init_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters (book_id, idx)")
-        # Limpiar audios antiguos generados a velocidades distintas de 1.00x
-        # para evitar que suenen acelerados al combinarse con playbackRate.
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        row_speed = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'edge_base_speed'"
+        ).fetchone()
+        if row_speed:
+            try:
+                saved_base_speed = float(row_speed["value"])
+            except ValueError:
+                saved_base_speed = tts_service.DEFAULT_EDGE_BASE_SPEED
+        else:
+            saved_base_speed = tts_service.DEFAULT_EDGE_BASE_SPEED
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('edge_base_speed', ?)",
+                (f"{saved_base_speed:.2f}",),
+            )
+        tts_service.set_edge_base_speed(saved_base_speed)
+
+        # Limpiar referencias en DB a audios generados con otra velocidad base nativa
+        conn.execute(
+            f"""
             UPDATE chapters
             SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
-            WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_1.00.mp3'
+            WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
             """
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('auto_advance_sentence', '1')"
         )
         _migrate_reassemble_existing_books(conn)
         conn.commit()
+
+
+def get_edge_base_speed() -> float:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'edge_base_speed'"
+        ).fetchone()
+        if row:
+            try:
+                return tts_service.set_edge_base_speed(float(row["value"]))
+            except ValueError:
+                pass
+    return tts_service.get_edge_base_speed()
+
+
+def set_edge_base_speed(speed: float) -> float:
+    clamped = tts_service.set_edge_base_speed(speed)
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES ('edge_base_speed', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (f"{clamped:.2f}",),
+        )
+        conn.execute(
+            f"""
+            UPDATE chapters
+            SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL
+            WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
+            """
+        )
+        conn.commit()
+    return clamped
+
+
+def get_auto_advance_sentence() -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'auto_advance_sentence'"
+        ).fetchone()
+        if row:
+            return row["value"] != "0"
+    return True
+
+
+def set_auto_advance_sentence(enabled: bool) -> bool:
+    val = "1" if enabled else "0"
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES ('auto_advance_sentence', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (val,),
+        )
+        conn.commit()
+    return bool(enabled)
 
 
 def _migrate_reassemble_existing_books(conn: sqlite3.Connection) -> None:
@@ -146,8 +230,9 @@ def list_books() -> List[BookSummary]:
 
 
 def _chapter_voice_files(book_id: str, chapter_idx: int, voice: str) -> tuple[Path, Path]:
-    audio_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_1.00.mp3"
-    align_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_1.00.json"
+    tag = tts_service.AUDIO_CACHE_TAG
+    audio_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_{tag}.mp3"
+    align_file = config.AUDIO_DIR / f"{book_id}_c{chapter_idx}_{voice}_{tag}.json"
     return audio_file, align_file
 
 
@@ -244,7 +329,7 @@ def get_chapter(
                 has_voice_audio = False
 
         if not sentences:
-            base_prefix = f"{book_id}_c{chapter_idx}_{active_voice}_1.00"
+            base_prefix = f"{book_id}_c{chapter_idx}_{active_voice}_{tts_service.AUDIO_CACHE_TAG}"
             groups = tts_service.partition_sentence_indices(len(base_texts), total_parts)
 
             # Comprobar cuántos fragmentos iniciales (0, 1, ...) ya fueron precargados
@@ -394,8 +479,7 @@ def update_book_settings(
             ).fetchall()
             for row in rows:
                 c_idx = row["idx"]
-                target_audio = config.AUDIO_DIR / f"{book_id}_c{c_idx}_{voice}_1.00.mp3"
-                target_align = config.AUDIO_DIR / f"{book_id}_c{c_idx}_{voice}_1.00.json"
+                target_audio, target_align = _chapter_voice_files(book_id, c_idx, voice)
                 if target_audio.exists() and target_align.exists():
                     try:
                         sentences_data = json.loads(target_align.read_text(encoding="utf-8"))
