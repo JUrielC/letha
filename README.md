@@ -82,16 +82,24 @@ Y para detener ambos servicios:
 ```
 
 ### Compilar Release para Distribución
-Para generar el paquete multiplataforma empaquetado (Next.js compilado + ventana Swift + wheel de Python):
+Para generar en local el paquete multiplataforma empaquetado (Next.js compilado + ventana Swift + wheel de Python):
 ```bash
 ./scripts/build-release.sh
 ```
 El archivo distribuible quedará en `dist/letha-<versión>-py3-none-any.whl` (compatible tanto con macOS como con Windows), junto a copias de `install.sh` e `install.ps1`.
 
-Para publicarlo, sube **los tres** archivos al release: los comandos de instalación descargan `install.sh` e `install.ps1` desde `releases/latest/download/`, así que un release sin ellos rompe la instalación.
-```bash
-gh release create v<versión> dist/* --title "Letha <versión>" --latest
-```
+### Publicar una versión
+Los releases los publica GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) al subir un tag:
+
+1. Sube la versión en `backend/pyproject.toml`, `backend/letha/__init__.py`, `backend/letha/api.py` y `frontend/package.json`, y haz commit.
+2. Crea y sube el tag:
+   ```bash
+   git tag v<versión> && git push origin v<versión>
+   ```
+
+El workflow comprueba que el tag coincida con la versión, corre los tests, compila en macOS y publica el release con el wheel, `install.sh` e `install.ps1`. Los tres son necesarios: los comandos de instalación descargan los instaladores desde `releases/latest/download/`.
+
+Para probar el pipeline sin publicar nada: `gh workflow run release.yml`.
 
 ---
 
