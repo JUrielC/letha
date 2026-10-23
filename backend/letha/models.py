@@ -20,6 +20,7 @@ class SentenceItem(BaseModel):
     start: Optional[float] = None
     end: Optional[float] = None
     words: Optional[List[WordTiming]] = None
+    paragraph_start: bool = False
 
 
 class ChapterSummary(BaseModel):

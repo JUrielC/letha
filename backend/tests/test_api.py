@@ -2,6 +2,7 @@
 Pruebas de la API y del servidor empaquetado de Letha con TestClient.
 """
 
+import asyncio
 import io
 import json
 import sqlite3
@@ -38,6 +39,40 @@ def create_sample_pdf() -> bytes:
     pdf_bytes = doc.tobytes()
     doc.close()
     return pdf_bytes
+
+
+def create_structured_pdf() -> bytes:
+    """Página con título, subtítulo, párrafos, una oración partida entre bloques y un índice."""
+    doc = pymupdf.open()
+    page1 = doc.new_page()
+    page1.insert_text((72, 90), "CHAPTER ONE")
+    page1.insert_text((72, 125), "What Happened to Holly Golightly?")
+    page1.insert_text(
+        (72, 160), "I sometimes visit places where I lived in the past. I like to see\nthem again."
+    )
+    page1.insert_text((72, 220), "I didn't write about Holly in those days. Holly was another")
+    page1.insert_text((72, 260), "tenant in the old brown stone house, in the apartment below mine.")
+    page1.insert_text((72, 320), "Contents\nChapter 1\nChapter 2")
+    page1.insert_text((72, 700), "CHAPTER TWO")
+    page2 = doc.new_page()
+    page2.insert_text((72, 90), "It was a quiet morning. Nobody came to the bar.")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes
+
+
+STRUCTURED_PAGE_1 = [
+    ("CHAPTER ONE", True),
+    ("What Happened to Holly Golightly?", True),
+    ("I sometimes visit places where I lived in the past.", True),
+    ("I like to see them again.", False),
+    ("I didn't write about Holly in those days.", True),
+    ("Holly was another tenant in the old brown stone house, in the apartment below mine.", False),
+    ("Contents", True),
+    ("Chapter 1", True),
+    ("Chapter 2", True),
+    ("CHAPTER TWO", True),
+]
 
 
 def create_blank_pdf() -> bytes:
@@ -517,6 +552,118 @@ def test_incomplete_sentence_carried_over_to_next_page():
 
     # Página 2 comienza con la oración completa unida ("It was a place that she would like.")
     assert chap1_sentences[0] == "It was a place that she would like."
+
+
+def test_titles_and_paragraphs_are_kept_separate(monkeypatch):
+    """
+    Verifica que los títulos sin punto y cada párrafo queden como oraciones separadas,
+    que una oración partida entre bloques se una y que un título al final de la página
+    no se pase a la siguiente.
+    """
+    from letha.services import tts as tts_service
+
+    database.init_db()
+    client = TestClient(api.app)
+    res = client.post(
+        "/api/books/upload",
+        files={"file": ("holly.pdf", io.BytesIO(create_structured_pdf()), "application/pdf")},
+        data={"voice": "en-US-AvaNeural", "language": "en"},
+    )
+    assert res.status_code == 200
+    book_id = res.json()["id"]
+
+    chap0 = client.get(f"/api/books/{book_id}/chapters/0").json()
+    assert [(s["text"], s["paragraph_start"]) for s in chap0["sentences"]] == STRUCTURED_PAGE_1
+    chap1 = client.get(f"/api/books/{book_id}/chapters/1").json()
+    assert chap1["sentences"][0]["text"] == "It was a quiet morning."
+
+    async def fake_synthesize_group(sentence_texts, voice="en-US-AvaNeural", speed=1.0):
+        n = len(sentence_texts)
+        return b"\x00" * (6000 * n), float(n), [(float(i), float(i + 1)) for i in range(n)]
+
+    monkeypatch.setattr(tts_service, "synthesize_sentence_group", fake_synthesize_group)
+    synth = client.post(f"/api/books/{book_id}/chapters/0/synthesize?voice=en-US-AvaNeural").json()
+    assert [(s["text"], s["paragraph_start"]) for s in synth["sentences"]] == STRUCTURED_PAGE_1
+
+
+def test_titles_get_a_pause_when_spoken(monkeypatch):
+    """Verifica que a un título sin puntuación se le añada un punto solo en el texto enviado a la voz."""
+    from letha.services import tts as tts_service
+
+    sent = {}
+
+    async def fake_chunk(chunk_text, voice, rate_str, semaphore, boundary="SentenceBoundary"):
+        sent["text"] = chunk_text
+        return bytearray(b"\x00" * 6000), []
+
+    monkeypatch.setattr(tts_service, "_synthesize_single_chunk", fake_chunk)
+    asyncio.run(
+        tts_service.synthesize_sentence_group(
+            ["CHAPTER ONE", "What Happened to Holly Golightly?", '"It was late," he said.']
+        )
+    )
+    assert sent["text"] == 'CHAPTER ONE. What Happened to Holly Golightly? "It was late," he said.'
+
+
+def test_reassembling_keeps_paragraphs():
+    """Verifica que volver a rearmar los capítulos ya extraídos no cambie su texto."""
+    from letha.services import pdf as pdf_service
+
+    doc = pymupdf.open(stream=create_structured_pdf(), filetype="pdf")
+    chapters = pdf_service.extract_chapters(doc)
+    doc.close()
+    again = pdf_service.reassemble_chapters_data([dict(c) for c in chapters])
+    assert [c["text_content"] for c in again] == [c["text_content"] for c in chapters]
+    assert "\n\n" in chapters[0]["text_content"]
+
+
+def test_existing_books_get_paragraphs_from_their_pdf():
+    """
+    Verifica que un libro guardado con el texto aplanado se vuelva a extraer del PDF una sola
+    vez, borrando solo el audio de las páginas cuyas oraciones cambiaron.
+    """
+    database.init_db()
+    client = TestClient(api.app)
+    res = client.post(
+        "/api/books/upload",
+        files={"file": ("holly.pdf", io.BytesIO(create_structured_pdf()), "application/pdf")},
+        data={"voice": "en-US-AvaNeural", "language": "en"},
+    )
+    book_id = res.json()["id"]
+
+    with database.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, text_content FROM chapters WHERE book_id = ? ORDER BY idx", (book_id,)
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE chapters SET text_content = ? WHERE id = ?",
+                (row["text_content"].replace("\n\n", " "), row["id"]),
+            )
+        conn.execute("DELETE FROM app_settings WHERE key = 'paragraphs_extracted'")
+
+    stale_audio = config.AUDIO_DIR / f"{book_id}_c0_en-US-AvaNeural_0.85.mp3"
+    kept_audio = config.AUDIO_DIR / f"{book_id}_c1_en-US-AvaNeural_0.85.mp3"
+    stale_audio.write_bytes(b"mp3")
+    kept_audio.write_bytes(b"mp3")
+    assert client.get(f"/api/books/{book_id}/chapters/0").json()["sentences"][0]["text"] == (
+        "CHAPTER ONE What Happened to Holly Golightly?"
+    )
+
+    database.init_db()
+    chap0 = client.get(f"/api/books/{book_id}/chapters/0").json()
+    assert [(s["text"], s["paragraph_start"]) for s in chap0["sentences"]] == STRUCTURED_PAGE_1
+    assert not stale_audio.exists()
+    assert kept_audio.exists()
+
+    # La marca evita que se vuelva a ejecutar en cada arranque
+    with database.get_connection() as conn:
+        conn.execute(
+            "UPDATE chapters SET text_content = 'Texto editado.' WHERE book_id = ? AND idx = 1",
+            (book_id,),
+        )
+    database.init_db()
+    assert client.get(f"/api/books/{book_id}/chapters/1").json()["text_content"] == "Texto editado."
 
 
 def test_edge_tts_default_rate_is_85_percent():

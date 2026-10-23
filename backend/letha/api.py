@@ -325,9 +325,12 @@ async def synthesize_chapter(
     # Si no se especifica `part`, se sintetiza hasta el último fragmento (página completa)
     target_part = (total_parts - 1) if part is None else max(0, min(total_parts - 1, part))
 
-    base_texts = pdf_service.split_sentences(chapter.text_content)
+    paragraph_sentences = pdf_service.split_paragraph_sentences(chapter.text_content)
+    base_texts = [text for text, _ in paragraph_sentences]
+    paragraph_starts = [starts for _, starts in paragraph_sentences]
     if not base_texts:
         base_texts = [s.text for s in chapter.sentences if s.text]
+        paragraph_starts = [s.paragraph_start for s in chapter.sentences if s.text]
 
     # Sintetizamos a velocidad base nativa del 85% en edge-tts (-15%); el cambio de velocidad
     # adicional elegido por el usuario se aplica mediante playbackRate en el reproductor HTML5.
@@ -347,6 +350,8 @@ async def synthesize_chapter(
                 isinstance(s.get("start"), (int, float)) for s in cached_sentences
             ):
                 total_duration = float(cached_sentences[-1]["end"]) if cached_sentences else 0.0
+                for item, starts in zip(cached_sentences, paragraph_starts):
+                    item["paragraph_start"] = starts
                 database.update_chapter_audio(
                     book_id=book_id,
                     chapter_idx=chapter_idx,
@@ -391,8 +396,8 @@ async def synthesize_chapter(
     combined_audio = bytearray()
     time_offset = 0.0
     progressive_sentences = [
-        {"index": i, "text": txt, "start": None, "end": None}
-        for i, txt in enumerate(base_texts)
+        {"index": i, "text": txt, "start": None, "end": None, "paragraph_start": starts}
+        for i, (txt, starts) in enumerate(zip(base_texts, paragraph_starts))
     ]
 
     for p in range(target_part + 1):

@@ -198,6 +198,13 @@ def partition_sentence_indices(total_sentences: int, total_parts: int = DEFAULT_
     return groups
 
 
+def _speakable(sentence: str) -> str:
+    # Un título sin puntuación final se leería pegado a la oración siguiente
+    if re.search(r"[.!?…:;][\"”’'»)\]]*$", sentence):
+        return sentence
+    return f"{sentence}."
+
+
 def _norm_token(token: str) -> str:
     return re.sub(r"[^\w]", "", token.lower())
 
@@ -276,7 +283,7 @@ async def synthesize_sentence_group(
     if not clean_texts:
         return b"", 0.0, [(0.0, 0.0) for _ in sentence_texts]
 
-    joined_text = " ".join(clean_texts)
+    joined_text = " ".join(_speakable(s) for s in clean_texts)
     rate_str = format_rate(speed)
     active_boundary = BOUNDARY_TYPE
     semaphore = asyncio.Semaphore(1)

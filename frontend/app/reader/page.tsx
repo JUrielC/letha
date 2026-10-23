@@ -63,6 +63,15 @@ function extractPersona(friendlyName?: string, shortName?: string): string {
   return last.replace("Neural", "");
 }
 
+function groupParagraphs(sentences: SentenceItem[]): number[][] {
+  const paragraphs: number[][] = [];
+  sentences.forEach((s, idx) => {
+    if (idx === 0 || s.paragraph_start) paragraphs.push([idx]);
+    else paragraphs[paragraphs.length - 1].push(idx);
+  });
+  return paragraphs;
+}
+
 function ReaderContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("id") || "";
@@ -1006,6 +1015,7 @@ function ReaderContent() {
             }}
           >
             <article
+              lang={book?.language}
               className="font-serif max-w-[33em] mx-auto text-left hyphens-auto select-text"
               style={FONT_STYLES[fontSize]}
             >
@@ -1019,36 +1029,41 @@ function ReaderContent() {
               </header>
 
               <div className="space-y-4">
-                {chapter.sentences.map((s, idx) => {
-                  const isActive = idx === activeSentenceIdx;
-                  const isVoiceReady =
-                    typeof s.start === "number" && typeof s.end === "number";
-                  return (
-                    <span
-                      key={idx}
-                      ref={(el) => {
-                        sentenceRefs.current[idx] = el;
-                      }}
-                      onClick={() => handleSentenceClick(s, idx)}
-                      className={`sentence-item inline ${
-                        isActive
-                          ? "sentence-active-light opacity-100 cursor-pointer"
-                          : isVoiceReady
-                          ? "sentence-ready opacity-100 cursor-pointer"
-                          : "opacity-35 cursor-wait"
-                      }`}
-                      title={
-                        isVoiceReady
-                          ? boundaryType === "WordBoundary"
-                            ? "Haz clic en una palabra para escucharla o en la frase"
-                            : `Escuchar desde ${(s.start as number).toFixed(1)}s`
-                          : "Cargando voz para este fragmento..."
-                      }
-                    >
-                      {renderSentenceContent(s, idx)}
-                    </span>
-                  );
-                })}
+                {groupParagraphs(chapter.sentences).map((indices) => (
+                  <p key={indices[0]} className="m-0">
+                    {indices.map((idx) => {
+                      const s = chapter.sentences[idx];
+                      const isActive = idx === activeSentenceIdx;
+                      const isVoiceReady =
+                        typeof s.start === "number" && typeof s.end === "number";
+                      return (
+                        <span
+                          key={idx}
+                          ref={(el) => {
+                            sentenceRefs.current[idx] = el;
+                          }}
+                          onClick={() => handleSentenceClick(s, idx)}
+                          className={`sentence-item inline ${
+                            isActive
+                              ? "sentence-active-light opacity-100 cursor-pointer"
+                              : isVoiceReady
+                              ? "sentence-ready opacity-100 cursor-pointer"
+                              : "opacity-35 cursor-wait"
+                          }`}
+                          title={
+                            isVoiceReady
+                              ? boundaryType === "WordBoundary"
+                                ? "Haz clic en una palabra para escucharla o en la frase"
+                                : `Escuchar desde ${(s.start as number).toFixed(1)}s`
+                              : "Cargando voz para este fragmento..."
+                          }
+                        >
+                          {renderSentenceContent(s, idx)}
+                        </span>
+                      );
+                    })}
+                  </p>
+                ))}
               </div>
             </article>
           </div>

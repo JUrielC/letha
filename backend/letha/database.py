@@ -119,6 +119,7 @@ def init_db():
             WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
             """
         )
+        _migrate_paragraph_breaks(conn)
         _migrate_reassemble_existing_books(conn)
         _migrate_book_languages(conn)
         conn.commit()
@@ -306,6 +307,55 @@ def _migrate_book_languages(conn: sqlite3.Connection) -> None:
         conn.execute("INSERT INTO app_settings (key, value) VALUES ('book_languages_detected', '1')")
 
 
+def _migrate_paragraph_breaks(conn: sqlite3.Connection) -> None:
+    """
+    Vuelve a extraer del PDF los libros importados cuando el texto se guardaba sin títulos
+    ni párrafos separados. Solo reemplaza un libro si sus páginas coinciden y borra el audio
+    de las páginas cuyas oraciones cambiaron. Se ejecuta una sola vez.
+    """
+    if conn.execute("SELECT 1 FROM app_settings WHERE key = 'paragraphs_extracted'").fetchone():
+        return
+
+    for book in conn.execute("SELECT id, file_path FROM books").fetchall():
+        pdf_path = Path(book["file_path"])
+        if not pdf_path.exists():
+            continue
+        try:
+            new_chapters = pdf_service.extract_chapters_from_file(pdf_path)
+        except Exception:
+            continue
+        old_chapters = conn.execute(
+            "SELECT id, idx, start_page, end_page, text_content FROM chapters WHERE book_id = ? ORDER BY idx ASC",
+            (book["id"],),
+        ).fetchall()
+        if [(c["start_page"], c["end_page"]) for c in old_chapters] != [
+            (c["start_page"], c["end_page"]) for c in new_chapters
+        ]:
+            continue
+
+        for old_c, new_c in zip(old_chapters, new_chapters):
+            if old_c["text_content"] == new_c["text_content"]:
+                continue
+            conn.execute(
+                "UPDATE chapters SET text_content = ?, sentences_json = ? WHERE id = ?",
+                (new_c["text_content"], json.dumps(new_c["sentences"]), old_c["id"]),
+            )
+            new_sentences = [s["text"] for s in new_c["sentences"]]
+            if pdf_service.split_sentences(old_c["text_content"]) == new_sentences:
+                continue
+            conn.execute(
+                "UPDATE chapters SET audio_path = NULL, alignment_path = NULL, duration_seconds = NULL WHERE id = ?",
+                (old_c["id"],),
+            )
+            for stale_file in config.AUDIO_DIR.glob(f"{book['id']}_c{old_c['idx']}_*"):
+                try:
+                    stale_file.unlink()
+                except OSError:
+                    pass
+
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('paragraphs_extracted', '1')")
+
+
 def list_books() -> List[BookSummary]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM books ORDER BY last_read_at DESC").fetchall()
@@ -402,13 +452,16 @@ def get_chapter(
         if not r:
             return None
 
-        base_texts = pdf_service.split_sentences(r["text_content"])
+        paragraph_sentences = pdf_service.split_paragraph_sentences(r["text_content"])
+        base_texts = [text for text, _ in paragraph_sentences]
+        paragraph_starts = [starts for _, starts in paragraph_sentences]
         if not base_texts:
             try:
                 raw_saved = json.loads(r["sentences_json"])
                 base_texts = [s["text"] for s in raw_saved if s.get("text")]
             except Exception:
                 base_texts = []
+            paragraph_starts = [i == 0 for i in range(len(base_texts))]
 
         audio_file, align_file = _chapter_voice_files(book_id, chapter_idx, active_voice)
         total_parts = tts_service.DEFAULT_PAGE_PARTS
@@ -490,6 +543,9 @@ def get_chapter(
                     loaded_parts = 0
 
             sentences = [SentenceItem(**item) for item in raw_items]
+
+        for sentence, starts in zip(sentences, paragraph_starts):
+            sentence.paragraph_start = starts
 
         return ChapterDetail(
             idx=r["idx"],

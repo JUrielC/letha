@@ -14,6 +14,7 @@ export interface SentenceItem {
   start?: number | null;
   end?: number | null;
   words?: WordTiming[] | null;
+  paragraph_start?: boolean;
 }
 
 export interface ChapterSummary {

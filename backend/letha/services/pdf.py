@@ -116,6 +116,79 @@ def split_sentences(text: str) -> List[str]:
     return sentences
 
 
+def split_paragraph_sentences(text: str) -> List[Tuple[str, bool]]:
+    """Divide el texto en oraciones indicando cuáles empiezan un párrafo."""
+    return [
+        (sentence, i == 0)
+        for paragraph in re.split(r"\n{2,}", text or "")
+        for i, sentence in enumerate(split_sentences(paragraph))
+    ]
+
+
+def _split_paragraphs(text: str) -> List[List[str]]:
+    paragraphs = [split_sentences(p) for p in re.split(r"\n{2,}", text or "")]
+    return [p for p in paragraphs if p]
+
+
+def _join_paragraphs(paragraphs: List[List[str]]) -> str:
+    return "\n\n".join(" ".join(sentences) for sentences in paragraphs)
+
+
+def _starts_lowercase(text: str) -> bool:
+    t = text.lstrip()
+    return bool(t) and t[0].islower()
+
+
+def _is_heading_like(text: str) -> bool:
+    """Línea corta en mayúsculas o con sus palabras principales capitalizadas (ej. 'CHAPTER ONE', 'Chapter 1')."""
+    t = text.strip()
+    if not t or len(t) > 80 or t.endswith((",", ";", "-", "‐", "­")):
+        return False
+    words = re.findall(r"[^\W\d_]+", t)
+    if not words:
+        return False
+    if t.upper() == t:
+        return True
+    main_words = [w for w in words if len(w) > 3]
+    return bool(main_words) and sum(w[0].isupper() for w in main_words) / len(main_words) >= 0.75
+
+
+def _is_paragraph_break(prev: str, nxt: str, single_line: bool = False) -> bool:
+    """
+    Decide si entre dos fragmentos consecutivos hay un cambio de párrafo o solo un salto
+    de línea. Un fragmento sin puntuación final solo abre párrafo si parece un título,
+    para no partir oraciones en PDFs que guardan cada línea como un bloque.
+    """
+    last = prev.strip().rsplit("\n\n", 1)[-1]
+    if not last or last.endswith(("-", "‐", "­")) or _starts_lowercase(nxt):
+        return False
+    if is_complete_sentence(last):
+        return True
+    return _is_heading_like(last) or (single_line and len(last) <= 60)
+
+
+def _join_fragments(prev: str, nxt: str, single_line: bool = False) -> str:
+    if _is_paragraph_break(prev, nxt, single_line):
+        return f"{prev}\n\n{nxt}"
+    if re.search(r"\w[-‐­]$", prev):
+        return f"{prev[:-1]}{nxt}" if _starts_lowercase(nxt) else f"{prev}{nxt}"
+    return f"{prev} {nxt}"
+
+
+def _block_text(raw: str) -> str:
+    """Une las líneas de un bloque del PDF, separando como párrafo las que parecen títulos."""
+    lines = [line.strip() for line in raw.split("\n") if line.strip()]
+    text = lines[0]
+    for prev_line, line in zip(lines, lines[1:]):
+        if _is_heading_like(prev_line) and not _starts_lowercase(line):
+            text = f"{text}\n\n{line}"
+        elif re.search(r"\w[-‐­]$", text):
+            text = f"{text[:-1]}{line}" if _starts_lowercase(line) else f"{text}{line}"
+        else:
+            text = f"{text} {line}"
+    return text
+
+
 def _join_carryover(carryover: str, next_text: str) -> str:
     """Une una oración incompleta de la página anterior con el inicio de la página siguiente."""
     c = carryover.strip()
@@ -132,7 +205,8 @@ def _join_carryover(carryover: str, next_text: str) -> str:
 def clean_page_text(page: pymupdf.Page) -> str:
     """
     Extrae el texto de la página descartando márgenes superiores (encabezados)
-    e inferiores (pies de página / números de página) y uniendo saltos de línea con guiones.
+    e inferiores (pies de página / números de página). Los títulos y párrafos quedan
+    separados por una línea en blanco y las líneas de un mismo párrafo se unen.
     """
     rect = page.rect
     page_height = rect.height
@@ -145,7 +219,8 @@ def clean_page_text(page: pymupdf.Page) -> str:
     # Formato de block: (x0, y0, x1, y1, text, block_no, block_type)
     # block_type 0 = texto, 1 = imagen
 
-    page_text_pieces = []
+    full_page_text = ""
+    prev_single_line = False
     for b in blocks:
         if b[6] != 0:
             continue
@@ -161,14 +236,12 @@ def clean_page_text(page: pymupdf.Page) -> str:
             if len(text) < 40 or text.isdigit():
                 continue
 
-        page_text_pieces.append(text)
-
-    full_page_text = "\n\n".join(page_text_pieces)
-
-    # Arreglar palabras partidas al final de línea: ej. "cons-\ntrucción" -> "construcción"
-    full_page_text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", full_page_text)
-    # Reemplazar saltos simples por espacios, conservando saltos dobles para párrafos
-    full_page_text = re.sub(r"(?<!\n)\n(?!\n)", " ", full_page_text)
+        block = _block_text(text)
+        if full_page_text:
+            full_page_text = _join_fragments(full_page_text, block, prev_single_line)
+        else:
+            full_page_text = block
+        prev_single_line = "\n" not in text
 
     return full_page_text.strip()
 
@@ -190,44 +263,52 @@ def reassemble_chapters_data(raw_chapters: List[Dict[str, Any]]) -> List[Dict[st
         combined_text = _join_carryover(carryover, chap["text_content"])
         carryover = ""
 
-        sentences = split_sentences(combined_text)
-        if not sentences:
+        paragraphs = _split_paragraphs(combined_text)
+        if not paragraphs:
             continue
 
         is_last_page = i == total - 1
-        can_carry = len(sentences) > 1 or len(sentences[0]) > 120
-        if not is_last_page and can_carry and not is_complete_sentence(sentences[-1]):
-            carryover = sentences.pop()
+        last_sentence = paragraphs[-1][-1]
+        can_carry = sum(len(p) for p in paragraphs) > 1 or len(last_sentence) > 120
+        if (
+            not is_last_page
+            and can_carry
+            and not is_complete_sentence(last_sentence)
+            and not _is_paragraph_break(last_sentence, raw_chapters[i + 1]["text_content"])
+        ):
+            carryover = paragraphs[-1].pop()
+            if not paragraphs[-1]:
+                paragraphs.pop()
 
-        if not sentences:
+        if not paragraphs:
             continue
 
-        final_text = " ".join(sentences)
         assembled.append(
             {
                 "idx": len(assembled),
                 "title": chap["title"],
                 "start_page": chap["start_page"],
                 "end_page": chap["end_page"],
-                "text_content": final_text,
-                "sentences": [
-                    {"index": s_idx, "text": s_txt, "start": None, "end": None}
-                    for s_idx, s_txt in enumerate(sentences)
-                ],
+                "text_content": _join_paragraphs(paragraphs),
+                "sentences": _sentence_items(paragraphs),
             }
         )
 
     if carryover and assembled:
         last = assembled[-1]
-        merged_text = _join_carryover(last["text_content"], carryover)
-        merged_sentences = split_sentences(merged_text)
-        last["text_content"] = " ".join(merged_sentences)
-        last["sentences"] = [
-            {"index": s_idx, "text": s_txt, "start": None, "end": None}
-            for s_idx, s_txt in enumerate(merged_sentences)
-        ]
+        merged = _split_paragraphs(_join_carryover(last["text_content"], carryover))
+        last["text_content"] = _join_paragraphs(merged)
+        last["sentences"] = _sentence_items(merged)
 
     return assembled
+
+
+def _sentence_items(paragraphs: List[List[str]]) -> List[Dict[str, Any]]:
+    sentences = [s for p in paragraphs for s in p]
+    return [
+        {"index": s_idx, "text": s_txt, "start": None, "end": None}
+        for s_idx, s_txt in enumerate(sentences)
+    ]
 
 
 def extract_pdf_data(
@@ -253,6 +334,31 @@ def extract_pdf_data(
         full_cover_path = covers_dir / cover_filename
         pix.save(str(full_cover_path))
         cover_path = str(full_cover_path)
+
+    chapters_data = extract_chapters(doc)
+    doc.close()
+
+    book_info = {
+        "title": title,
+        "author": author,
+        "total_pages": total_pages,
+        "cover_path": cover_path,
+    }
+
+    return book_info, chapters_data
+
+
+def extract_chapters_from_file(pdf_path: Path) -> List[Dict[str, Any]]:
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        return extract_chapters(doc)
+    finally:
+        doc.close()
+
+
+def extract_chapters(doc: pymupdf.Document) -> List[Dict[str, Any]]:
+    """Extrae cada página con texto como capítulo, rearmando las oraciones cortadas entre páginas."""
+    total_pages = len(doc)
 
     # Mapa opcional de títulos desde el índice (TOC) por página (0-indexed)
     toc = doc.get_toc()  # [[lvl, title, page], ...]
@@ -289,15 +395,4 @@ def extract_pdf_data(
             }
         )
 
-    doc.close()
-
-    chapters_data = reassemble_chapters_data(raw_chapters)
-
-    book_info = {
-        "title": title,
-        "author": author,
-        "total_pages": total_pages,
-        "cover_path": cover_path,
-    }
-
-    return book_info, chapters_data
+    return reassemble_chapters_data(raw_chapters)
