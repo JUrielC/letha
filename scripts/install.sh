@@ -42,7 +42,7 @@ fi
 VERSION="$(basename "$WHEEL" | sed -n 's/^letha-\([^-]*\)-.*\.whl$/\1/p')"
 VERSION="${VERSION:-0.1.0}"
 
-say "→ Installing Letha $VERSION…"
+say "→ Installing Letha ${VERSION}…"
 uv tool install --force --python 3.12 "$WHEEL"
 
 BIN="$(uv tool dir --bin --color never)/letha"

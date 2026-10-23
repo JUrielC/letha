@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import json
+import platform
 import shlex
 import sqlite3
 import subprocess
@@ -905,6 +906,59 @@ def test_updater_script_waits_for_the_app_and_runs_installer(tmp_path):
     assert time.monotonic() - started >= 1.0
     assert marker.read_text().strip() == str(wheel)
 
+
+@pytest.mark.skipif(sys.platform == "win32", reason="El actualizador de macOS es un script de shell")
+def test_updater_reopens_the_installed_app_when_the_installer_fails(tmp_path):
+    from letha.services import updates as updates_service
+
+    installer = tmp_path / "install.sh"
+    installer.write_text("exit 1\n")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    opened = tmp_path / "abierto.txt"
+    fake_open = fake_bin / "open"
+    fake_open.write_text(f'#!/bin/sh\necho "$*" > {shlex.quote(str(opened))}\n')
+    fake_open.chmod(0o755)
+
+    script = updates_service.write_updater_script(tmp_path, tmp_path / "letha.whl", installer, [])
+    subprocess.run(["/bin/sh", str(script)], env={"PATH": f"{fake_bin}:/usr/bin:/bin"}, check=True, timeout=30)
+    assert opened.read_text().strip() == f"-b {updates_service.MACOS_BUNDLE_ID}"
+
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or platform.machine() != "arm64", reason="El instalador es para Macs con Apple Silicon"
+)
+def test_macos_installer_runs_with_a_utf8_locale(tmp_path):
+    """Ejecuta scripts/install.sh con un uv falso, como lo hace el actualizador, para detectar errores del propio script."""
+    fake_bin = tmp_path / "fake-bin"
+    tools = tmp_path / "tools"
+    for directory in (fake_bin, tools / "bin", tools / "letha" / "bin"):
+        directory.mkdir(parents=True)
+    executables = {
+        fake_bin / "uv": '#!/bin/sh\ncase "$*" in\n  "tool dir --bin"*) echo "$FAKE_TOOLS/bin" ;;\n  "tool dir"*) echo "$FAKE_TOOLS" ;;\nesac\n',
+        tools / "bin" / "letha": "#!/bin/sh\n",
+        tools / "letha" / "bin" / "python": "#!/bin/sh\n",
+    }
+    for path, content in executables.items():
+        path.write_text(content)
+        path.chmod(0o755)
+
+    installer = Path(__file__).resolve().parents[2] / "scripts" / "install.sh"
+    env = {
+        "PATH": f"{fake_bin}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "LC_ALL": "en_US.UTF-8",
+        "FAKE_TOOLS": str(tools),
+        "LETHA_WHEEL": str(tmp_path / "letha-9.9.9-py3-none-any.whl"),
+        "LETHA_APP_DIR": str(tmp_path / "Applications"),
+        "LETHA_NO_LAUNCH": "1",
+    }
+    result = subprocess.run(["/bin/sh", str(installer)], env=env, capture_output=True, text=True, errors="replace", timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert "Installing Letha 9.9.9" in result.stdout
+    info = (tmp_path / "Applications" / "Letha.app" / "Contents" / "Info.plist").read_text()
+    assert "<string>9.9.9</string>" in info
 
 class FakeProvider:
     def __init__(self, name, fail=False, prefix=""):

@@ -29,6 +29,9 @@ _STARTED_AT = time.time()
 # Debe coincidir con main.swift: la ventana de macOS se cierra en vez de mostrar un error
 UPDATE_EXIT_CODE = 75
 
+# Debe coincidir con CFBundleIdentifier en scripts/install.sh
+MACOS_BUNDLE_ID = "app.letha.reader"
+
 INSTALL_COMMANDS = {
     "darwin": "curl -fsSL https://github.com/JUrielC/letha/releases/latest/download/install.sh | sh",
     "win32": "irm https://github.com/JUrielC/letha/releases/latest/download/install.ps1 | iex",
@@ -166,7 +169,10 @@ def _ps_quote(value: Path) -> str:
 
 
 def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: List[int]) -> Path:
-    """Script que espera a que la app se cierre e instala la versión descargada, que vuelve a abrir Letha."""
+    """
+    Script que espera a que la app se cierre e instala la versión descargada, que vuelve a abrir Letha.
+    Si la instalación falla, abre la versión que ya estaba instalada para no dejar al usuario sin app.
+    """
     if sys.platform == "win32":
         script = directory / "update.ps1"
         script.write_text(
@@ -174,7 +180,7 @@ def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: Li
                 [
                     f"foreach ($p in @({', '.join(map(str, pids))})) {{ Wait-Process -Id $p -Timeout 60 -ErrorAction SilentlyContinue }}",
                     f"$env:LETHA_WHEEL = {_ps_quote(wheel)}",
-                    f"& {_ps_quote(installer)}",
+                    f"try {{ & {_ps_quote(installer)} }} catch {{ Start-Process -FilePath {_ps_quote(Path(sys.executable))} -ArgumentList '-m letha.app' }}",
                 ]
             )
             + "\n",
@@ -191,7 +197,7 @@ def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: Li
                 "  tries=0",
                 '  while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 120 ]; do sleep 0.5; tries=$((tries + 1)); done',
                 "done",
-                f"LETHA_WHEEL={shlex.quote(str(wheel))} /bin/sh {shlex.quote(str(installer))}",
+                f"LETHA_WHEEL={shlex.quote(str(wheel))} /bin/sh {shlex.quote(str(installer))} || open -b {MACOS_BUNDLE_ID}",
             ]
         )
         + "\n",
