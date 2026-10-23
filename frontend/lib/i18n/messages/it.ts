@@ -67,6 +67,7 @@ export const it: Messages = {
     addBook: "Aggiungi un libro",
     addBookHint: "Trascina qui un PDF o fai clic per sceglierlo",
     noMatches: "Nessun libro corrisponde al filtro.",
+    showMore: "Mostra altro",
     open: (book) => `Apri ${book}`,
     progressOf: (book) => `Avanzamento di ${book}`,
   },

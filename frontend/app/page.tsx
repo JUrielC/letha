@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { BookCard } from "@/components/BookCard";
@@ -15,6 +15,7 @@ import { useI18n } from "@/lib/i18n";
 import { personaName } from "@/lib/voices";
 import {
   BookOpen,
+  ChevronDown,
   Loader2,
   Play,
   Plus,
@@ -64,7 +65,10 @@ export default function HomePage() {
   const [query, setQuery] = useState("");
   const [continueSentenceText, setContinueSentenceText] = useState<string | null>(null);
   const [lastBookId, setLastBookId] = useState<string | null>(null);
+  const [columns, setColumns] = useState(1);
+  const [rows, setRows] = useState(1);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const { t, locale } = useI18n();
 
   const loadBooks = async () => {
@@ -173,6 +177,23 @@ export default function HomePage() {
       return b.title.toLowerCase().includes(q) || (b.author || "").toLowerCase().includes(q);
     });
   }, [books, filter, query]);
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const measure = () => setColumns(getComputedStyle(grid).gridTemplateColumns.split(" ").length);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [loading]);
+
+  useEffect(() => {
+    setRows(1);
+  }, [filter, query]);
+
+  const visibleCount = Math.max(1, rows * columns - 1);
+  const visibleBooks = filteredBooks.slice(0, visibleCount);
 
   const openUploadWithFile = (f: File | null) => {
     setDroppedFile(f);
@@ -539,17 +560,18 @@ export default function HomePage() {
             </div>
           ) : (
             <div
+              ref={gridRef}
               className="grid gap-x-7 gap-y-11"
               style={{
                 gridTemplateColumns:
                   "repeat(auto-fill, minmax(min(176px, calc(50% - 14px)), 1fr))",
               }}
             >
-              {filteredBooks.map((book, idx) => (
+              {visibleBooks.map((book, idx) => (
                 <div
                   key={book.id}
                   className="animate-rise-gradient flex flex-col"
-                  style={{ animationDelay: `${idx * 75}ms` }}
+                  style={{ animationDelay: `${(idx % columns) * 75}ms` }}
                 >
                   <BookCard
                     book={book}
@@ -601,6 +623,24 @@ export default function HomePage() {
                   {t.library.addBookHint}
                 </span>
               </div>
+            </div>
+          )}
+
+          {!loading && filteredBooks.length > visibleCount && (
+            <div className="flex justify-center mt-10">
+              <button
+                type="button"
+                onClick={() => setRows((prev) => prev + 1)}
+                className="glbtn glbtn-ghost inline-flex items-center gap-2 h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer"
+                style={{
+                  background: "var(--btn-ghost)",
+                  boxShadow: "var(--ring-ghost)",
+                  color: "var(--ink)",
+                }}
+              >
+                <span>{t.library.showMore}</span>
+                <ChevronDown className="w-4 h-4" strokeWidth={1.7} />
+              </button>
             </div>
           )}
 

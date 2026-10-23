@@ -67,6 +67,7 @@ export const pt: Messages = {
     addBook: "Adicionar um livro",
     addBookHint: "Arraste um PDF para cá ou clique para escolhê-lo",
     noMatches: "Nenhum livro corresponde ao filtro.",
+    showMore: "Ver mais",
     open: (book) => `Abrir ${book}`,
     progressOf: (book) => `Progresso de ${book}`,
   },

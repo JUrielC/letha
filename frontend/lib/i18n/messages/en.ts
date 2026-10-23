@@ -65,6 +65,7 @@ export const en = {
     addBook: "Add a book",
     addBookHint: "Drag a PDF here or click to choose it",
     noMatches: "No books match the filter.",
+    showMore: "Show more",
     open: (book: string) => `Open ${book}`,
     progressOf: (book: string) => `Progress of ${book}`,
   },
