@@ -20,7 +20,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
   return (
     <div className="sticky top-0 z-30 w-full p-4 pb-0 pointer-events-none">
       <header
-        className="glass pointer-events-auto max-w-[1148px] mx-auto px-[18px] py-[10px] flex items-center justify-between gap-4 flex-wrap rounded-[22px]"
+        className="glass pointer-events-auto page-width mx-auto px-[18px] py-[10px] flex items-center justify-between gap-4 rounded-[22px]"
         style={{
           background: "var(--glass-bar)",
           boxShadow: "var(--ring-bar)",

@@ -237,7 +237,17 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
+  /* El mismo mínimo que la ventana nativa (backend/letha/app.py y native/macos/main.swift) */
+  min-width: 800px;
+  min-height: max(100vh, 550px);
+}
+
+.page-width {
+  max-width: clamp(1148px, 90vw, 2200px);
+}
+
+.dock-width {
+  max-width: clamp(760px, 55vw, 1200px);
 }
 
 /* Mientras se aplica el idioma guardado: evita ver un instante la interfaz en inglés */

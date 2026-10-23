@@ -450,7 +450,7 @@ function SettingsContent() {
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="flex-1 w-full max-w-[1148px] mx-auto px-6 pt-14 pb-28 box-border">
+      <main className="flex-1 w-full page-width mx-auto px-6 pt-14 pb-28 box-border">
         {/* Encabezado */}
         <header className="flex flex-wrap items-end justify-between gap-4 pb-8">
           <div>

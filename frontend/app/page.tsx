@@ -196,7 +196,7 @@ export default function HomePage() {
     <div className="min-h-screen flex flex-col">
       <Navbar onOpenUpload={() => openUploadWithFile(null)} />
 
-      <main className="flex-1 w-full max-w-[1148px] mx-auto px-6 pt-14 pb-28 box-border">
+      <main className="flex-1 w-full page-width mx-auto px-6 pt-14 pb-28 box-border">
         {/* Encabezado */}
         <section
           aria-labelledby="header-title"

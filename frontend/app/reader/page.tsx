@@ -774,7 +774,7 @@ function ReaderContent() {
       {/* Barra superior de lectura */}
       <div className="sticky top-0 z-30 p-4 pb-0 pointer-events-none">
         <header
-          className="glass pointer-events-auto max-w-[1180px] mx-auto rounded-[22px] px-2.5 pt-0 pb-2 relative"
+          className="glass pointer-events-auto page-width mx-auto rounded-[22px] px-2.5 pt-0 pb-2 relative"
           style={{
             background: "var(--glass-bar)",
             boxShadow: "var(--ring-bar)",
@@ -1138,7 +1138,7 @@ function ReaderContent() {
         {translationPanelVisible && (
           <div
             aria-live="polite"
-            className="glass-strong pointer-events-auto w-full max-w-[760px] rounded-[24px] px-5 py-3 max-h-[132px] overflow-y-auto box-border"
+            className="glass-strong pointer-events-auto w-full dock-width rounded-[24px] px-5 py-3 max-h-[132px] overflow-y-auto box-border"
             style={{
               background: "var(--glass-dock)",
               boxShadow: "var(--shadow-dock)",
@@ -1164,7 +1164,7 @@ function ReaderContent() {
         )}
 
         <div
-          className="glass-strong pointer-events-auto w-full max-w-[760px] rounded-[30px] p-[10px] pl-2.5 pr-3.5 flex flex-wrap items-center gap-3"
+          className="glass-strong pointer-events-auto w-full min-w-[736px] dock-width rounded-[30px] p-[10px] pl-2.5 pr-3.5 flex items-center gap-3"
           style={{
             background: "var(--glass-dock)",
             boxShadow: "var(--shadow-dock)",
