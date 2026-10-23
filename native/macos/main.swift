@@ -288,21 +288,6 @@ extension AppDelegate: WKUIDelegate {
             completionHandler(response == .OK ? panel.urls : nil)
         }
     }
-
-    func webView(
-        _ webView: WKWebView,
-        runJavaScriptConfirmPanelWithMessage message: String,
-        initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping (Bool) -> Void
-    ) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "Aceptar")
-        alert.addButton(withTitle: "Cancelar")
-        alert.beginSheetModal(for: window) { response in
-            completionHandler(response == .alertFirstButtonReturn)
-        }
-    }
 }
 
 let app = NSApplication.shared

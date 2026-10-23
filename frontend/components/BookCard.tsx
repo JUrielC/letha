@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
 import { Check, Trash2 } from "lucide-react";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 const COVER_PALETTES = [
   { bg: "#2f4a3a", ink: "#efe9dc" },
@@ -42,6 +43,7 @@ export function BookCard({
     book.voice || "es-MX-DaliaNeural"
   );
   const [imgFailed, setImgFailed] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const bookVoices = voices.filter(
     (v) =>
@@ -136,9 +138,7 @@ export function BookCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (confirm(`¿Eliminar "${book.title}" de tu biblioteca?`)) {
-                onDelete(book.id);
-              }
+              setConfirmingDelete(true);
             }}
             className="quiet shrink-0 w-8 h-8 -mr-1.5 -mt-1 rounded-full flex items-center justify-center cursor-pointer border-0 text-[var(--soft)] hover:text-[var(--danger)] hover:bg-[var(--hover)] transition"
           >
@@ -211,6 +211,19 @@ export function BookCard({
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmingDelete}
+        title="Eliminar libro"
+        message={`Se eliminará «${book.title}» de tu biblioteca, junto con tu progreso y el audio generado.`}
+        confirmLabel="Eliminar"
+        destructive
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          onDelete(book.id);
+        }}
+        onCancel={() => setConfirmingDelete(false)}
+      />
     </article>
   );
 }
