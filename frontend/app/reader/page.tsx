@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { errorMessage, languageName, useI18n } from "@/lib/i18n";
 import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
+import { savedSettings, savePreferences } from "@/lib/preferences";
 import { Theme, useTheme } from "@/lib/useTheme";
 import { personaName, voiceLabel } from "@/lib/voices";
 
@@ -114,16 +115,16 @@ function ReaderContent() {
   }, [isPlaying]);
 
   useEffect(() => {
-    try {
-      const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
-      setFontSize(savedFont);
-      setShowTranslation(localStorage.getItem("letha_show_translation") !== "0");
-    } catch {}
+    const saved = savedSettings();
+    setFontSize(saved.font_size ?? "base");
+    setShowTranslation(saved.show_translation ?? true);
 
     api.getVoices().then(setVoices).catch(console.error);
     api
       .getAppSettings()
       .then((s) => {
+        setFontSize(s.font_size);
+        setShowTranslation(s.show_translation);
         setAutoAdvanceSentence(s.auto_advance_sentence ?? true);
         setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(
@@ -255,9 +256,7 @@ function ReaderContent() {
 
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
-      try {
-        localStorage.setItem("letha_last_book_id", bookId);
-      } catch {}
+      savePreferences({ last_book_id: bookId });
       api.updateProgress(bookId, chapterIdx, restoredSentence >= 0 ? restoredSentence : 0).catch(console.error);
     } else {
       api.updateProgress(bookId, chapterIdx, 0).catch(console.error);
@@ -681,9 +680,7 @@ function ReaderContent() {
     const nextIdx = Math.max(0, Math.min(order.length - 1, curIdx + delta));
     const next = order[nextIdx];
     setFontSize(next);
-    try {
-      localStorage.setItem("letha_fontsize", next);
-    } catch {}
+    savePreferences({ font_size: next });
   };
 
   const narrator = personaName(selectedVoice, voices, t);
@@ -694,12 +691,9 @@ function ReaderContent() {
       : 0;
 
   const toggleTranslation = () => {
-    setShowTranslation((prev) => {
-      try {
-        localStorage.setItem("letha_show_translation", prev ? "0" : "1");
-      } catch {}
-      return !prev;
-    });
+    const next = !showTranslation;
+    setShowTranslation(next);
+    savePreferences({ show_translation: next });
   };
 
   const translationPanelVisible = translationEnabled && showTranslation && !!chapter;

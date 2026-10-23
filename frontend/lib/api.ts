@@ -74,6 +74,10 @@ export interface AppSettings {
   boundary_type: "SentenceBoundary" | "WordBoundary";
   auto_check_updates: boolean;
   native_language: string | null;
+  theme: "light" | "sepia" | "dark";
+  font_size: "sm" | "base" | "lg" | "xl";
+  show_translation: boolean;
+  last_book_id: string | null;
 }
 
 export interface TranslationLanguage {
@@ -107,7 +111,7 @@ export interface UpdateInfo {
 
 declare global {
   interface Window {
-    __LETHA__?: { api: string; token: string };
+    __LETHA__?: { api: string; token: string; settings?: Partial<AppSettings> };
   }
 }
 
@@ -179,6 +183,10 @@ export const api = {
     boundary_type?: "SentenceBoundary" | "WordBoundary";
     auto_check_updates?: boolean;
     native_language?: string;
+    theme?: AppSettings["theme"];
+    font_size?: AppSettings["font_size"];
+    show_translation?: boolean;
+    last_book_id?: string;
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",

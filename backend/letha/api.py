@@ -150,6 +150,7 @@ def get_app_settings():
         boundary_type=database.get_boundary_type(),
         auto_check_updates=database.get_auto_check_updates(),
         native_language=database.get_native_language(),
+        **database.get_ui_preferences(),
     )
 
 
@@ -187,6 +188,12 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.native_language is not None
         else database.get_native_language()
     )
+    preferences = database.set_ui_preferences(
+        theme=payload.theme,
+        font_size=payload.font_size,
+        show_translation=payload.show_translation,
+        last_book_id=payload.last_book_id,
+    )
     return AppSettings(
         edge_base_speed=speed,
         auto_advance_sentence=auto_adv,
@@ -194,6 +201,7 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         boundary_type=b_type,
         auto_check_updates=check_updates,
         native_language=native,
+        **preferences,
     )
 
 

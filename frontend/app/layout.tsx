@@ -41,8 +41,9 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              var s = (window.__LETHA__ && window.__LETHA__.settings) || {};
               try {
-                var t = localStorage.getItem('letha_ui_theme') || 'light';
+                var t = s.theme || 'light';
                 if (t === 'dark') {
                   document.documentElement.classList.add('dark');
                   document.body.classList.add('theme-dark');
@@ -51,8 +52,8 @@ export default function RootLayout({
                 }
               } catch (e) {}
               try {
-                var l = localStorage.getItem('letha_ui_language');
-                if (l && l !== 'en') {
+                var l = s.native_language;
+                if (['es', 'fr', 'it', 'pt'].indexOf(l) >= 0) {
                   document.documentElement.lang = l;
                   document.documentElement.setAttribute('data-i18n-pending', '');
                   setTimeout(function () { document.documentElement.removeAttribute('data-i18n-pending'); }, 3000);

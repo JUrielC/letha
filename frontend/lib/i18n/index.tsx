@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
+import { savedSettings } from "@/lib/preferences";
 import { en, Messages } from "./messages/en";
 import { es } from "./messages/es";
 import { fr } from "./messages/fr";
@@ -13,8 +14,6 @@ export type { Messages };
 
 export const UI_MESSAGES = { en, es, fr, it, pt };
 export type UiLocale = keyof typeof UI_MESSAGES;
-
-export const UI_LANGUAGE_KEY = "letha_ui_language";
 
 export function resolveLocale(language: string | null | undefined): UiLocale {
   return language && language in UI_MESSAGES ? (language as UiLocale) : "en";
@@ -27,9 +26,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   // El HTML exportado está en inglés: el idioma guardado se aplica antes de pintar y el script de layout.tsx oculta la página hasta entonces
   useLayoutEffect(() => {
-    try {
-      setLocale(resolveLocale(localStorage.getItem(UI_LANGUAGE_KEY)));
-    } catch {}
+    setLocale(resolveLocale(savedSettings().native_language));
     document.documentElement.removeAttribute("data-i18n-pending");
   }, []);
 
@@ -46,9 +43,6 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = locale;
     document.title = UI_MESSAGES[locale].meta.title;
-    try {
-      localStorage.setItem(UI_LANGUAGE_KEY, locale);
-    } catch {}
     (window as any).webkit?.messageHandlers?.lethaLanguage?.postMessage(locale);
   }, [locale]);
 

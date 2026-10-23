@@ -137,6 +137,96 @@ def test_build_app_initializes_fresh_db_and_enforces_token(tmp_path):
     assert res_cookie_auth.status_code == 200
 
 
+def test_ui_preferences_are_saved_in_the_database():
+    database.init_db()
+    client = TestClient(api.app)
+
+    defaults = client.get("/api/settings").json()
+    assert (defaults["theme"], defaults["font_size"], defaults["show_translation"], defaults["last_book_id"]) == (
+        "light",
+        "base",
+        True,
+        None,
+    )
+
+    res = client.put(
+        "/api/settings",
+        json={"theme": "dark", "font_size": "xl", "show_translation": False, "last_book_id": "3001c887e8c1"},
+    )
+    assert res.status_code == 200
+    saved = client.get("/api/settings").json()
+    assert (saved["theme"], saved["font_size"], saved["show_translation"], saved["last_book_id"]) == (
+        "dark",
+        "xl",
+        False,
+        "3001c887e8c1",
+    )
+    assert database.get_setting("ui_theme") == "dark"
+
+    assert client.put("/api/settings", json={"theme": "neon"}).status_code == 422
+    assert client.put("/api/settings", json={"last_book_id": "</script>"}).status_code == 422
+
+
+def test_packaged_pages_carry_the_saved_preferences(tmp_path):
+    from concurrent.futures import Future
+
+    from letha.app import with_loading_screen
+
+    web_dir = tmp_path / "web"
+    web_dir.mkdir()
+    (web_dir / "index.html").write_text("<html><head></head><body>Letha</body></html>", encoding="utf-8")
+    packaged_app = build_app(token="secreto", web_dir=web_dir)
+    database.set_ui_preferences(theme="sepia", font_size="lg")
+    database.set_native_language("fr")
+
+    def injected(html: str) -> dict:
+        return json.loads(html.split("window.__LETHA__ = ", 1)[1].split(";</script>", 1)[0])
+
+    page = TestClient(packaged_app, base_url="http://127.0.0.1").get("/").text
+    assert injected(page)["settings"]["theme"] == "sepia"
+    assert injected(page)["settings"]["font_size"] == "lg"
+    assert injected(page)["settings"]["native_language"] == "fr"
+
+    loading = TestClient(with_loading_screen(Future()), base_url="http://127.0.0.1").get("/").text
+    assert injected(loading)["settings"] == {"theme": "sepia", "native_language": "fr"}
+
+
+def test_each_launch_listens_on_a_free_port_chosen_by_the_system():
+    import socket
+
+    from letha.app import _bind
+
+    first, second = _bind(), _bind()
+    try:
+        assert first.getsockname()[0] == "127.0.0.1"
+        assert first.getsockname()[1] != second.getsockname()[1]
+        socket.create_connection(first.getsockname(), timeout=2).close()
+    finally:
+        first.close()
+        second.close()
+
+
+def test_open_window_is_brought_to_front_only_with_the_token(monkeypatch, tmp_path):
+    from letha import app as letha_app
+
+    calls = []
+
+    class FakeWindow:
+        def restore(self):
+            calls.append("restore")
+
+        def show(self):
+            calls.append("show")
+
+    client = TestClient(build_app(token="secreto", web_dir=tmp_path / "web"), base_url="http://127.0.0.1")
+    assert client.post("/api/window/show", headers={"X-Letha-Token": "secreto"}).status_code == 404
+
+    monkeypatch.setattr(letha_app, "_window", FakeWindow())
+    assert client.post("/api/window/show").status_code == 404
+    assert client.post("/api/window/show", headers={"X-Letha-Token": "secreto"}).status_code == 204
+    assert calls == ["restore", "show"]
+
+
 def test_cors_blocks_external_origins():
     """Verifica que orígenes externos maliciosos no reciban cabeceras CORS."""
     client = TestClient(api.app)

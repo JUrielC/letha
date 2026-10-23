@@ -11,6 +11,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, TranslationLanguage, UpdateInfo } from "@/lib/api";
 import { errorMessage, errorText, useI18n } from "@/lib/i18n";
 import { announceNativeLanguage, NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
+import { savedSettings, savePreferences } from "@/lib/preferences";
 import { Theme, useTheme } from "@/lib/useTheme";
 
 const DEFAULT_PERCENT = 90;
@@ -180,10 +181,7 @@ function SettingsContent() {
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    try {
-      const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
-      setFontSize(savedFont);
-    } catch {}
+    setFontSize(savedSettings().font_size ?? "base");
 
     setLoading(true);
     api
@@ -195,6 +193,7 @@ function SettingsContent() {
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
         setAutoCheckUpdates(s.auto_check_updates ?? true);
         setNativeLanguage(s.native_language ?? null);
+        setFontSize(s.font_size);
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
@@ -853,9 +852,7 @@ function SettingsContent() {
                           aria-checked={active}
                           onClick={() => {
                             setFontSize(z.key);
-                            try {
-                              localStorage.setItem("letha_fontsize", z.key);
-                            } catch {}
+                            savePreferences({ font_size: z.key });
                           }}
                           className="quiet h-[34px] px-3.5 rounded-full border-0 font-serif cursor-pointer transition"
                           style={{

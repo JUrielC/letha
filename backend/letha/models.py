@@ -4,8 +4,11 @@ Esquemas Pydantic para la API de Letha.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
+
+Theme = Literal["light", "sepia", "dark"]
+FontSize = Literal["sm", "base", "lg", "xl"]
 
 
 class WordTiming(BaseModel):
@@ -95,6 +98,10 @@ class AppSettings(BaseModel):
     boundary_type: str = "SentenceBoundary"
     auto_check_updates: bool = True
     native_language: Optional[str] = None
+    theme: Theme = "light"
+    font_size: FontSize = "base"
+    show_translation: bool = True
+    last_book_id: Optional[str] = None
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -104,6 +111,10 @@ class UpdateAppSettingsRequest(BaseModel):
     boundary_type: Optional[str] = None
     auto_check_updates: Optional[bool] = None
     native_language: Optional[str] = None
+    theme: Optional[Theme] = None
+    font_size: Optional[FontSize] = None
+    show_translation: Optional[bool] = None
+    last_book_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class TranslationLanguage(BaseModel):

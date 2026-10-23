@@ -63,6 +63,7 @@ export default function HomePage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
   const [continueSentenceText, setContinueSentenceText] = useState<string | null>(null);
+  const [lastBookId, setLastBookId] = useState<string | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const { t, locale } = useI18n();
 
@@ -81,6 +82,10 @@ export default function HomePage() {
   useEffect(() => {
     loadBooks();
     api.getVoices().then(setVoices).catch(console.error);
+    api
+      .getAppSettings()
+      .then((s) => setLastBookId(s.last_book_id))
+      .catch(console.error);
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -104,19 +109,14 @@ export default function HomePage() {
     // 2. Libro iniciado
     const started = books.find(isStarted);
     if (started) return started;
-    // 3. ?ltimo libro abierto guardado en sesi?n
-    try {
-      const lastId = localStorage.getItem("letha_last_book_id");
-      if (lastId) {
-        const found = books.find((b) => b.id === lastId);
-        if (found) return found;
-      }
-    } catch {}
+    // 3. Último libro abierto
+    const lastOpened = lastBookId ? books.find((b) => b.id === lastBookId) : undefined;
+    if (lastOpened) return lastOpened;
     // 4. Libro le?do recientemente seg?n el backend
     const recent = books.find((b) => b.last_read_at && b.last_read_at > b.created_at);
     if (recent) return recent;
     return null;
-  }, [books]);
+  }, [books, lastBookId]);
 
   useEffect(() => {
     if (!continueBook) {

@@ -257,6 +257,32 @@ def set_native_language(language: str) -> str:
     return language
 
 
+def get_ui_preferences() -> Dict[str, Any]:
+    return {
+        "theme": get_setting("ui_theme") or "light",
+        "font_size": get_setting("font_size") or "base",
+        "show_translation": get_setting("show_translation") != "0",
+        "last_book_id": get_setting("last_book_id"),
+    }
+
+
+def set_ui_preferences(
+    theme: Optional[str] = None,
+    font_size: Optional[str] = None,
+    show_translation: Optional[bool] = None,
+    last_book_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    if theme is not None:
+        set_setting("ui_theme", theme)
+    if font_size is not None:
+        set_setting("font_size", font_size)
+    if show_translation is not None:
+        set_setting("show_translation", "1" if show_translation else "0")
+    if last_book_id is not None:
+        set_setting("last_book_id", last_book_id)
+    return get_ui_preferences()
+
+
 def get_cached_translations(source: str, target: str, texts: Sequence[str]) -> Dict[str, str]:
     unique = list(dict.fromkeys(texts))
     found: Dict[str, str] = {}
