@@ -2,4 +2,4 @@
 Letha — Lector de libros con sincronización de audiolibro en tiempo real.
 """
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
