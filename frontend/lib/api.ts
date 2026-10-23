@@ -80,6 +80,15 @@ export interface AppSettings {
   last_book_id: string | null;
 }
 
+export interface OfflineTranslation {
+  language: string;
+  model: string;
+  size: number;
+  status: "missing" | "downloading" | "installed" | "error";
+  progress: number;
+  error?: string | null;
+}
+
 export interface TranslationLanguage {
   code: string;
   name: string;
@@ -195,6 +204,14 @@ export const api = {
     }),
 
   getTranslationLanguages: () => request<TranslationLanguage[]>("/api/translation/languages"),
+
+  getOfflineTranslation: () => request<OfflineTranslation[]>("/api/translation/offline"),
+
+  downloadOfflineTranslation: (language: string) =>
+    request<OfflineTranslation>(`/api/translation/offline/${language}`, { method: "POST" }),
+
+  deleteOfflineTranslation: (language: string) =>
+    request<OfflineTranslation>(`/api/translation/offline/${language}`, { method: "DELETE" }),
 
   getChapterTranslations: (bookId: string, chapterIdx: number) =>
     request<ChapterTranslations>(`/api/books/${bookId}/chapters/${chapterIdx}/translations`),

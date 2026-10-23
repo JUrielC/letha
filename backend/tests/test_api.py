@@ -1241,6 +1241,9 @@ class FakeProvider:
         self.max_chars = 100000
         self.calls = []
 
+    def available(self, source, target):
+        return True
+
     def translate(self, texts, source, target):
         from letha.services.translation import ProviderError
 
@@ -1349,6 +1352,104 @@ def test_chapter_translations_endpoint(monkeypatch):
     assert data["translations"] == [f"ES: {s}" for s in sentences]
     assert data["provider"] == "microsoft"
     assert client.get(f"/api/books/{book_id}/chapters/0/translations").json()["provider"] == "cache"
+
+
+def test_offline_models_cover_every_pair_of_book_languages():
+    from letha.services import offline_translation
+    from letha.services.tts import SUPPORTED_LANGUAGES
+
+    for source in SUPPORTED_LANGUAGES:
+        for target in SUPPORTED_LANGUAGES:
+            model = offline_translation.model_for(source, target)
+            assert (model is None) == (source == target)
+            assert model is None or model in offline_translation.MODELS
+
+
+def test_offline_translation_lists_the_book_languages_for_the_native_one():
+    from letha.services import offline_translation
+
+    database.init_db()
+    client = TestClient(api.app)
+    assert client.get("/api/translation/offline").json() == []
+    assert client.post("/api/translation/offline/en").json()["detail"]["code"] == "native_language_required"
+
+    client.put("/api/settings", json={"native_language": "es"})
+    items = client.get("/api/translation/offline").json()
+    romance = offline_translation.ROMANCE_MODEL
+    assert [(i["language"], i["model"], i["status"]) for i in items] == [
+        ("en", "opus-mt-tc-big-en-es", "missing"),
+        ("fr", romance, "missing"),
+        ("it", romance, "missing"),
+        ("pt", romance, "missing"),
+    ]
+    assert client.post("/api/translation/offline/es").json()["detail"]["code"] == "unsupported_language"
+
+
+def test_offline_model_download_is_verified_before_installing(monkeypatch, tmp_path):
+    import zipfile
+
+    from letha.services import offline_translation
+
+    archive = tmp_path / "opus-mt-tc-big-en-es.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        for name in ("config.json", "model.bin", "source.spm", "target.spm"):
+            z.writestr(name, "x")
+    data = archive.read_bytes()
+    model_dir = config.CACHE_DIR / "translation-models" / "opus-mt-tc-big-en-es"
+    monkeypatch.setattr(offline_translation, "MODELS_URL", tmp_path.as_uri())
+    monkeypatch.setattr(offline_translation, "_downloads", {})
+    monkeypatch.setitem(
+        offline_translation.MODELS,
+        "opus-mt-tc-big-en-es",
+        {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()},
+    )
+    database.init_db()
+    client = TestClient(api.app)
+    client.put("/api/settings", json={"native_language": "es"})
+
+    def finished(language):
+        for _ in range(200):
+            item = next(i for i in client.get("/api/translation/offline").json() if i["language"] == language)
+            if item["status"] != "downloading":
+                return item
+            time.sleep(0.05)
+        raise AssertionError("la descarga no terminó")
+
+    assert client.post("/api/translation/offline/en").status_code == 200
+    assert finished("en")["status"] == "installed"
+    assert (model_dir / "model.bin").is_file()
+
+    assert client.delete("/api/translation/offline/en").json()["status"] == "missing"
+    assert not model_dir.exists()
+
+    monkeypatch.setitem(offline_translation.MODELS, "opus-mt-tc-big-en-es", {"size": len(data), "sha256": "0" * 64})
+    client.post("/api/translation/offline/en")
+    failed = finished("en")
+    assert (failed["status"], failed["error"]) == ("error", "checksum_mismatch")
+    assert not model_dir.exists()
+
+
+def test_offline_models_only_translate_when_online_providers_fail(monkeypatch):
+    from letha.services import offline_translation
+    from letha.services import translation as translation_service
+
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    monkeypatch.setattr(offline_translation, "is_installed", lambda model: model == "opus-mt-tc-big-en-es")
+    monkeypatch.setattr(offline_translation, "translate", lambda texts, source, target: [f"local:{t}" for t in texts])
+    online = [FakeProvider("microsoft", fail=True), FakeProvider("google", fail=True)]
+    monkeypatch.setattr(translation_service, "PROVIDERS", [*online, translation_service.OfflineProvider()])
+    database.init_db()
+
+    assert translation_service.translate(["Hello."], "en", "es") == {
+        "translations": ["local:Hello."],
+        "provider": "offline",
+    }
+    assert translation_service.translate(["Bonjour."], "fr", "es") == {"translations": [None], "provider": None}
+
+    working = [FakeProvider("microsoft", prefix="ms:"), translation_service.OfflineProvider()]
+    monkeypatch.setattr(translation_service, "PROVIDERS", working)
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    assert translation_service.translate(["Good morning."], "en", "es")["provider"] == "microsoft"
 
 
 def test_edge_tts_default_rate_is_90_percent():

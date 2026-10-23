@@ -1,6 +1,7 @@
 """
-Traducción con una cadena de proveedores sin clave (Microsoft y luego Google) y caché local:
-cada texto se traduce una sola vez por par de idiomas.
+Traducción con una cadena de proveedores sin clave (Microsoft, luego Google y, como respaldo sin
+conexión, los modelos descargados en el equipo) y caché local: cada texto se traduce una sola vez
+por par de idiomas.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import urllib.request
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from letha import database
+from letha.services import offline_translation
 
 # Deben ser los idiomas en los que está traducida la interfaz (frontend/lib/i18n/messages)
 NATIVE_LANGUAGES = {
@@ -50,6 +52,9 @@ class Provider:
     name = ""
     max_items = 1
     max_chars = 1
+
+    def available(self, source: str, target: str) -> bool:
+        return True
 
     def translate(self, texts: List[str], source: str, target: str) -> List[str]:
         raise NotImplementedError
@@ -97,7 +102,24 @@ class GoogleProvider(Provider):
         return [item[0] if isinstance(item, list) else item for item in data]
 
 
-PROVIDERS: List[Provider] = [MicrosoftProvider(), GoogleProvider()]
+class OfflineProvider(Provider):
+    """Modelos descargados desde Configuración; solo responde por los pares que estén instalados."""
+
+    name = "offline"
+    max_items = 32
+    max_chars = 8000
+
+    def available(self, source: str, target: str) -> bool:
+        return offline_translation.is_available(source, target)
+
+    def translate(self, texts: List[str], source: str, target: str) -> List[str]:
+        try:
+            return offline_translation.translate(texts, source, target)
+        except (LookupError, OSError, RuntimeError, ValueError) as e:
+            raise ProviderError(str(e)) from e
+
+
+PROVIDERS: List[Provider] = [MicrosoftProvider(), GoogleProvider(), OfflineProvider()]
 _down_until: Dict[str, float] = {}
 
 
@@ -118,7 +140,7 @@ def _translate_with_providers(
     texts: List[str], source: str, target: str
 ) -> Tuple[Optional[List[str]], Optional[str]]:
     for provider in PROVIDERS:
-        if _down_until.get(provider.name, 0) > time.time():
+        if _down_until.get(provider.name, 0) > time.time() or not provider.available(source, target):
             continue
         try:
             result: List[str] = []

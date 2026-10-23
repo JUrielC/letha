@@ -25,6 +25,7 @@ from letha.models import (
     BookSummary,
     ChapterDetail,
     ChapterTranslations,
+    OfflineTranslation,
     SkipUpdateRequest,
     TranslationLanguage,
     UninstallRequest,
@@ -34,6 +35,7 @@ from letha.models import (
     UpdateProgressRequest,
     VoiceItem,
 )
+from letha.services import offline_translation
 from letha.services import pdf as pdf_service
 from letha.services import translation as translation_service
 from letha.services import tts as tts_service
@@ -211,6 +213,46 @@ def get_translation_languages():
         TranslationLanguage(code=code, name=name)
         for code, name in translation_service.NATIVE_LANGUAGES.items()
     ]
+
+
+def _offline_status(language: str, model: str) -> OfflineTranslation:
+    return OfflineTranslation(language=language, **offline_translation.model_status(model))
+
+
+def _offline_model(language: str) -> str:
+    native = database.get_native_language()
+    if not native:
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "native_language_required")
+    model = offline_translation.model_for(language, native)
+    if model is None:
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "unsupported_language")
+    return model
+
+
+@app.get("/api/translation/offline", response_model=List[OfflineTranslation])
+def get_offline_translation():
+    native = database.get_native_language()
+    if not native:
+        return []
+    return [
+        _offline_status(language, model)
+        for language in tts_service.SUPPORTED_LANGUAGES
+        if (model := offline_translation.model_for(language, native))
+    ]
+
+
+@app.post("/api/translation/offline/{language}", response_model=OfflineTranslation)
+def download_offline_translation(language: str):
+    model = _offline_model(language)
+    offline_translation.start_download(model)
+    return _offline_status(language, model)
+
+
+@app.delete("/api/translation/offline/{language}", response_model=OfflineTranslation)
+def delete_offline_translation(language: str):
+    model = _offline_model(language)
+    offline_translation.delete_model(model)
+    return _offline_status(language, model)
 
 
 @app.get("/api/updates", response_model=UpdateInfo)

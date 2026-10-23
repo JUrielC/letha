@@ -16,6 +16,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pydantic>=2.6.0",
     "aiofiles>=23.2.1",
+    "ctranslate2>=4.5",
+    "sentencepiece>=0.2",
     "pywebview>=6.2; sys_platform == 'win32'",
 ]
 

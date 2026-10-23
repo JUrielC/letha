@@ -122,6 +122,15 @@ class TranslationLanguage(BaseModel):
     name: str
 
 
+class OfflineTranslation(BaseModel):
+    language: str
+    model: str
+    size: int
+    status: Literal["missing", "downloading", "installed", "error"]
+    progress: float = 0.0
+    error: Optional[str] = None
+
+
 class ChapterTranslations(BaseModel):
     source: str
     target: str

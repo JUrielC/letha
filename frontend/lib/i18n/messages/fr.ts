@@ -204,6 +204,19 @@ export const fr: Messages = {
     uninstallStartedWindows:
       "Letha est en cours de suppression. Si cette fenêtre ne se ferme pas toute seule, vous pouvez la fermer.",
     uninstallFailed: "Letha n’a pas pu être désinstallé.",
+    offline: "Traduction hors ligne",
+    offlineHint:
+      "Téléchargez des modèles pour traduire vos livres sans internet quand Microsoft et Google ne répondent pas. Ils ne servent que de secours.",
+    offlineNeedsNative: "Choisissez d’abord votre langue maternelle.",
+    offlineDownload: "Télécharger",
+    offlineRetry: "Réessayer",
+    offlineDelete: "Supprimer",
+    offlineInstalled: "Téléchargé",
+    offlineDownloading: (percent) => `Téléchargement… ${percent} %`,
+    offlineFailed: "Le téléchargement a échoué. Vérifiez votre connexion.",
+    offlineShared: (languages) => `Sert aussi pour ${languages}.`,
+    offlineCredits: "Modèles Opus-MT de l’Université d’Helsinki (CC BY 4.0 et Apache 2.0).",
+    offlineLoadFailed: "Impossible de charger les modèles hors ligne.",
     footer: "Les voix neuronales proviennent de Microsoft Edge TTS et nécessitent une connexion internet.",
   },
   reader: {

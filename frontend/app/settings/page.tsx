@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square, Trash2 } from "luci
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
+import { OfflineTranslationSection } from "@/components/OfflineTranslationSection";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, TranslationLanguage, UpdateInfo } from "@/lib/api";
 import { errorMessage, errorText, useI18n } from "@/lib/i18n";
@@ -513,6 +514,8 @@ function SettingsContent() {
                 <LanguagePicker languages={languages} value={nativeLanguage} onChange={handleNativeLanguageChange} />
               </div>
             </section>
+
+            <OfflineTranslationSection nativeLanguage={nativeLanguage} />
 
             <OptionGrid
               name="reading-mode"
