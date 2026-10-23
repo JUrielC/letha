@@ -169,8 +169,8 @@ def _ps_quote(value: Path) -> str:
 
 
 def _app_pids() -> List[int]:
-    # En macOS el proceso padre es la ventana nativa, que también debe cerrarse antes de tocar la instalación
-    return [os.getpid()] + ([os.getppid()] if sys.platform == "darwin" else [])
+    # El padre (la ventana nativa en macOS, el lanzador de uv en Windows) también debe cerrarse antes de tocar la instalación
+    return [os.getpid(), os.getppid()]
 
 
 def _wait_for(pids: List[int]) -> List[str]:
@@ -230,7 +230,8 @@ def _launch_detached(script: Path, log: Path) -> None:
             stdin=subprocess.DEVNULL,
             stdout=log_file,
             stderr=subprocess.STDOUT,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            # Con DETACHED_PROCESS, PowerShell se cierra sin ejecutar nada: necesita una consola, aunque sea oculta
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
     else:
