@@ -11,6 +11,7 @@ Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus l
 - **Efecto Karaoke (Sincronización exacta):** Captura eventos de `SentenceBoundary` para sincronizar y resaltar la frase que se está reproduciendo en cada milisegundo con auto-desplazamiento suave.
 - **Navegación Interactiva:** Haz clic en cualquier oración del texto para saltar la reproducción inmediatamente a ese punto exacto.
 - **Experiencia de Lectura:** Modos **Claro**, **Sepia cálido** y **Oscuro**, tamaños de tipografía ajustables y control de velocidad de reproducción (0.75x a 2.0x).
+- **Traducción al idioma nativo:** Cada oración se traduce con Microsoft o, si falla, con Google. Como respaldo sin internet, desde **Configuración → Traducción sin conexión** puedes descargar modelos [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) de la Universidad de Helsinki (CC BY 4.0 y Apache 2.0), convertidos a [CTranslate2](https://github.com/OpenNMT/CTranslate2); se publican en el release [`modelos-traduccion-1`](https://github.com/JUrielC/letha/releases/tag/modelos-traduccion-1).
 
 ---
 
@@ -116,6 +117,43 @@ Para probar contra otro manifiesto, arranca la app con `LETHA_UPDATE_URL=<url de
 
 ---
 
+## Créditos y licencias de terceros
+
+### Modelos de traducción sin conexión
+
+Los modelos del release [`modelos-traduccion-1`](https://github.com/JUrielC/letha/releases/tag/modelos-traduccion-1) son obras derivadas de modelos [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) del Language Technology Research Group de la Universidad de Helsinki (Helsinki-NLP). La única modificación es la conversión al formato de [CTranslate2](https://github.com/OpenNMT/CTranslate2) con cuantización int8; los pesos no se reentrenaron.
+
+| Modelo original | Licencia |
+|---|---|
+| [opus-mt-tc-big-en-es](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-es), [opus-mt-tc-big-en-fr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-fr), [opus-mt-tc-big-en-it](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-it), [opus-mt-tc-big-en-pt](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-pt), [opus-mt-tc-big-itc-itc](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-itc-itc) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [opus-mt-tc-bible-big-roa-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-roa-en) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+
+Referencia: Jörg Tiedemann y Santhosh Thottingal, *OPUS-MT — Building open translation services for the World*, EAMT 2020.
+
+### Fuentes
+
+Las fuentes [Instrument Sans](https://fonts.google.com/specimen/Instrument+Sans) y [Literata](https://fonts.google.com/specimen/Literata) se incluyen en la interfaz compilada y se distribuyen bajo la [SIL Open Font License 1.1](https://openfontlicense.org).
+
+### Bibliotecas y herramientas
+
+| Proyecto | Uso en Letha | Licencia |
+|---|---|---|
+| [PyMuPDF](https://github.com/pymupdf/PyMuPDF) (Artifex) | Lectura de los PDF y portadas | AGPL-3.0 |
+| [edge-tts](https://github.com/rany2/edge-tts) | Voces neurales de Microsoft Edge | LGPL-3.0 |
+| [CTranslate2](https://github.com/OpenNMT/CTranslate2) (OpenNMT) | Traducción sin conexión | MIT |
+| [SentencePiece](https://github.com/google/sentencepiece) (Google) | Tokenización de los modelos de traducción | Apache 2.0 |
+| [FastAPI](https://github.com/fastapi/fastapi), [Pydantic](https://github.com/pydantic/pydantic) | API local | MIT |
+| [Uvicorn](https://github.com/encode/uvicorn) | Servidor local | BSD-3-Clause |
+| [python-multipart](https://github.com/Kludex/python-multipart), [aiofiles](https://github.com/Tinche/aiofiles) | Subida y lectura de archivos | Apache 2.0 |
+| [pywebview](https://github.com/r0x0r/pywebview), [Python.NET](https://github.com/pythonnet/pythonnet) | Ventana nativa en Windows | BSD-3-Clause, MIT |
+| [Next.js](https://github.com/vercel/next.js), [React](https://github.com/facebook/react), [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | Interfaz | MIT |
+| [Lucide](https://github.com/lucide-icons/lucide) | Iconos | ISC |
+| [uv](https://github.com/astral-sh/uv) (Astral) | Instalación de Letha y de Python | MIT o Apache 2.0 |
+
+Las voces y la traducción en línea usan servicios de Microsoft y Google, sujetos a sus propios términos.
+
+---
+
 ## Licencia
 
-Distribuido bajo licencia MIT.
+El código de Letha se distribuye bajo licencia MIT. Las bibliotecas, fuentes y modelos de terceros conservan sus propias licencias (ver arriba).
