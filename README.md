@@ -49,7 +49,7 @@ Tanto macOS (Gatekeeper) como Windows (SmartScreen) bloquean los instaladores de
 
 ### Actualizar o desinstalar
 
-Para **actualizar**, vuelve a ejecutar el mismo comando de instalación de tu sistema.
+Para **actualizar**, Letha te avisa en la biblioteca cuando hay una versión nueva: desde el aviso (o desde **Configuración → Actualizaciones**) puedes ver las novedades y actualizar con un clic. Letha descarga la versión nueva, verifica su huella SHA-256, se cierra y vuelve a abrirse ya actualizada, conservando tu biblioteca. También puedes volver a ejecutar el comando de instalación de tu sistema.
 
 Para **desinstalar en macOS**:
 ```bash
@@ -100,6 +100,17 @@ Los releases los publica GitHub Actions ([`.github/workflows/release.yml`](.gith
 El workflow comprueba que el tag coincida con la versión, corre los tests, compila en macOS y publica el release con el wheel, `install.sh` e `install.ps1`. Los tres son necesarios: los comandos de instalación descargan los instaladores desde `releases/latest/download/`.
 
 Para probar el pipeline sin publicar nada: `gh workflow run release.yml`.
+
+### Canal de actualizaciones
+La app no consulta GitHub directamente: lee el manifiesto en `https://letha.jurielc.com/updates/latest.json` (`MANIFEST_URL` en [`backend/letha/services/updates.py`](backend/letha/services/updates.py)). Cada release genera ese manifiesto (versión, cambios, y URL y huella SHA-256 de cada archivo) y el workflow [`site.yml`](.github/workflows/site.yml) lo publica en GitHub Pages, así que se puede cambiar de hosting sin afectar a las copias ya instaladas.
+
+Cada despliegue de Pages reemplaza el sitio entero, así que todo lo que se sirva en `letha.jurielc.com` (por ejemplo, la documentación en `/docs`) debe armarse en ese mismo workflow.
+
+Configuración única:
+1. En el DNS, un registro `CNAME` de `letha` apuntando a `jurielc.github.io` (en Cloudflare, en modo «solo DNS»).
+2. En el repo, **Settings → Pages**: *Source* = **GitHub Actions**, *Custom domain* = `letha.jurielc.com` y, cuando esté disponible, **Enforce HTTPS**.
+
+Para probar contra otro manifiesto, arranca la app con `LETHA_UPDATE_URL=<url del manifiesto>`.
 
 ---
 

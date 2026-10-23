@@ -75,7 +75,13 @@ jobs:
           ## Cambios
 
           EOF
-          git log --no-merges --pretty='- %s' "${PREV_TAG:+$PREV_TAG..}$GITHUB_REF_NAME" >> release-notes.md
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/letha-${VERSION}-py3-none-any.whl" dist/install.sh dist/install.ps1 \
+          git log --no-merges --pretty='%s' "${PREV_TAG:+$PREV_TAG..}$GITHUB_REF_NAME" > changes.txt
+          sed 's/^/- /' changes.txt >> release-notes.md
+          ASSETS=("dist/letha-${VERSION}-py3-none-any.whl" dist/install.sh dist/install.ps1)
+          python3 scripts/update_manifest.py \
+            --version "$VERSION" \
+            --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --notes-file changes.txt --output latest.json "${ASSETS[@]}"
+          gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" latest.json \
             --title "Letha ${VERSION}" --notes-file release-notes.md --latest --verify-tag
