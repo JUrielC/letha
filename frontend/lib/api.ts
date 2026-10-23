@@ -207,6 +207,13 @@ export const api = {
   installUpdate: () =>
     request<{ version: string }>("/api/updates/install", { method: "POST" }),
 
+  uninstall: (deleteLibrary: boolean) =>
+    request<{ status: string }>("/api/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delete_library: deleteLibrary }),
+    }),
+
   getVoicePreviewUrl: (voice: string) =>
     `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,
 

@@ -168,6 +168,25 @@ def _ps_quote(value: Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _app_pids() -> List[int]:
+    # En macOS el proceso padre es la ventana nativa, que también debe cerrarse antes de tocar la instalación
+    return [os.getpid()] + ([os.getppid()] if sys.platform == "darwin" else [])
+
+
+def _wait_for(pids: List[int]) -> List[str]:
+    """Líneas de script que esperan a que terminen los procesos `pids`, como mucho un minuto cada uno."""
+    if sys.platform == "win32":
+        return [
+            f"foreach ($p in @({', '.join(map(str, pids))})) {{ Wait-Process -Id $p -Timeout 60 -ErrorAction SilentlyContinue }}"
+        ]
+    return [
+        f"for pid in {' '.join(map(str, pids))}; do",
+        "  tries=0",
+        '  while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 120 ]; do sleep 0.5; tries=$((tries + 1)); done',
+        "done",
+    ]
+
+
 def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: List[int]) -> Path:
     """
     Script que espera a que la app se cierre e instala la versión descargada, que vuelve a abrir Letha.
@@ -178,7 +197,7 @@ def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: Li
         script.write_text(
             "\n".join(
                 [
-                    f"foreach ($p in @({', '.join(map(str, pids))})) {{ Wait-Process -Id $p -Timeout 60 -ErrorAction SilentlyContinue }}",
+                    *_wait_for(pids),
                     f"$env:LETHA_WHEEL = {_ps_quote(wheel)}",
                     f"try {{ & {_ps_quote(installer)} }} catch {{ Start-Process -FilePath {_ps_quote(Path(sys.executable))} -ArgumentList '-m letha.app' }}",
                 ]
@@ -193,10 +212,7 @@ def write_updater_script(directory: Path, wheel: Path, installer: Path, pids: Li
         "\n".join(
             [
                 "#!/bin/sh",
-                f"for pid in {' '.join(map(str, pids))}; do",
-                "  tries=0",
-                '  while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 120 ]; do sleep 0.5; tries=$((tries + 1)); done',
-                "done",
+                *_wait_for(pids),
                 f"LETHA_WHEEL={shlex.quote(str(wheel))} /bin/sh {shlex.quote(str(installer))} || open -b {MACOS_BUNDLE_ID}",
             ]
         )
@@ -254,9 +270,7 @@ def start_update() -> Dict[str, Any]:
     except OSError:
         raise UpdateError("download_failed")
 
-    # En macOS el proceso padre es la ventana nativa, que también debe cerrarse antes de reinstalar
-    pids = [os.getpid()] + ([os.getppid()] if sys.platform == "darwin" else [])
-    script = write_updater_script(directory, wheel, installer, pids)
+    script = write_updater_script(directory, wheel, installer, _app_pids())
     _launch_detached(script, directory / "update.log")
     _schedule_exit()
     return {"version": release["version"]}

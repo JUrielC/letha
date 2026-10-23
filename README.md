@@ -51,6 +51,8 @@ Tanto macOS (Gatekeeper) como Windows (SmartScreen) bloquean los instaladores de
 
 Para **actualizar**, Letha te avisa en la biblioteca cuando hay una versión nueva: desde el aviso (o desde **Configuración → Actualizaciones**) puedes ver las novedades y actualizar con un clic. Letha descarga la versión nueva, verifica su huella SHA-256, se cierra y vuelve a abrirse ya actualizada, conservando tu biblioteca. También puedes volver a ejecutar el comando de instalación de tu sistema.
 
+Para **desinstalar**, abre **Configuración → Desinstalar**. Letha se cierra y se quita del equipo junto con sus accesos directos; tú eliges si también se borra tu biblioteca (libros, audios y progreso). Si prefieres hacerlo desde la terminal, estos comandos lo quitan todo, biblioteca incluida.
+
 Para **desinstalar en macOS**:
 ```bash
 uv tool uninstall letha && rm -rf ~/Applications/Letha.app ~/.cache/letha ~/.local/share/letha

@@ -3,7 +3,8 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square, Trash2 } from "lucide-react";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -165,6 +166,9 @@ function SettingsContent() {
   const [checkingUpdates, setCheckingUpdates] = useState<boolean>(false);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState<boolean>(false);
+  const [uninstallConfirmOpen, setUninstallConfirmOpen] = useState<boolean>(false);
+  const [deleteLibrary, setDeleteLibrary] = useState<boolean>(false);
+  const [uninstallPhase, setUninstallPhase] = useState<"idle" | "uninstalling" | "started" | "error">("idle");
   const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
   const [languages, setLanguages] = useState<TranslationLanguage[]>([]);
 
@@ -300,6 +304,32 @@ function SettingsContent() {
       setUpdateMessage(errorMessage(err, t, t.settings.checkFailed));
     } finally {
       setCheckingUpdates(false);
+    }
+  };
+
+  const canUninstall = updateInfo?.can_self_update ?? false;
+  const uninstallStatus = {
+    idle: canUninstall || !updateInfo ? t.settings.uninstallDescription : t.settings.uninstallUnavailable,
+    uninstalling: t.settings.uninstalling,
+    started: updateInfo?.platform === "win32" ? t.settings.uninstallStartedWindows : t.settings.uninstallStarted,
+    error: t.settings.uninstallFailed,
+  }[uninstallPhase];
+
+  const openUninstallConfirm = () => {
+    setDeleteLibrary(false);
+    setUninstallConfirmOpen(true);
+  };
+
+  const handleUninstall = async () => {
+    setUninstallConfirmOpen(false);
+    setUninstallPhase("uninstalling");
+    try {
+      await api.uninstall(deleteLibrary);
+      setUninstallPhase("started");
+      // En Windows la ventana de Edge sigue abierta aunque el servidor se cierre
+      if (updateInfo?.platform === "win32") setTimeout(() => window.close(), 4000);
+    } catch {
+      setUninstallPhase("error");
     }
   };
 
@@ -932,6 +962,57 @@ function SettingsContent() {
                 </div>
               </div>
             </section>
+
+            <section aria-labelledby="uninstall-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
+              <div className="flex-1 min-w-[280px] max-w-[380px]">
+                <h2 id="uninstall-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
+                  {t.settings.uninstall}
+                </h2>
+                <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
+                  {t.settings.uninstallHint}
+                </p>
+              </div>
+
+              <div
+                className="glass flex-[999_1_560px] min-w-0 p-2.5 rounded-[26px] flex flex-col gap-2.5"
+                style={{
+                  background: "var(--glass-sub)",
+                  boxShadow: "var(--ring-sub)",
+                }}
+              >
+                <div
+                  className="p-4 rounded-[20px] flex flex-wrap items-center justify-between gap-4"
+                  style={{ background: "var(--tile-off)", boxShadow: "var(--shadow-tile-off)" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="m-0 text-[15px] font-medium" style={{ color: "var(--ink)" }}>
+                      {t.settings.uninstallApp}
+                    </p>
+                    <p
+                      role={uninstallPhase === "error" ? "alert" : undefined}
+                      className="m-0 mt-1 text-sm leading-relaxed"
+                      style={{ color: uninstallPhase === "error" ? "var(--danger)" : "var(--soft)" }}
+                    >
+                      {uninstallStatus}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openUninstallConfirm}
+                    disabled={!canUninstall || uninstallPhase === "uninstalling" || uninstallPhase === "started"}
+                    className="glbtn inline-flex items-center gap-2 h-10 px-4 rounded-full border-0 text-sm font-medium cursor-pointer disabled:opacity-60"
+                    style={{ background: "var(--btn-ghost)", color: "var(--danger)" }}
+                  >
+                    {uninstallPhase === "uninstalling" ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    <span>{t.settings.uninstallButton}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
         )}
 
@@ -946,6 +1027,30 @@ function SettingsContent() {
             }}
           />
         )}
+
+        <ConfirmModal
+          isOpen={uninstallConfirmOpen}
+          title={t.settings.uninstallConfirmTitle}
+          message={
+            <>
+              {t.settings.uninstallConfirmBody}
+              <label className="mt-4 flex items-start gap-2.5 cursor-pointer select-none" style={{ color: "var(--ink)" }}>
+                <input
+                  type="checkbox"
+                  checked={deleteLibrary}
+                  onChange={(e) => setDeleteLibrary(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 shrink-0 cursor-pointer"
+                  style={{ accentColor: "var(--danger)" }}
+                />
+                <span>{t.settings.uninstallDeleteLibrary}</span>
+              </label>
+            </>
+          }
+          confirmLabel={t.settings.uninstallConfirm}
+          destructive
+          onConfirm={handleUninstall}
+          onCancel={() => setUninstallConfirmOpen(false)}
+        />
 
         {error && (
           <p

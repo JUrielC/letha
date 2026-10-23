@@ -27,6 +27,7 @@ from letha.models import (
     ChapterTranslations,
     SkipUpdateRequest,
     TranslationLanguage,
+    UninstallRequest,
     UpdateAppSettingsRequest,
     UpdateBookSettingsRequest,
     UpdateInfo,
@@ -36,6 +37,7 @@ from letha.models import (
 from letha.services import pdf as pdf_service
 from letha.services import translation as translation_service
 from letha.services import tts as tts_service
+from letha.services import uninstall as uninstall_service
 from letha.services import updates as updates_service
 
 _required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
@@ -226,6 +228,15 @@ def install_update():
         return updates_service.start_update()
     except updates_service.UpdateError as e:
         raise _api_error(status.HTTP_409_CONFLICT, e.code, str(e))
+
+
+@app.post("/api/uninstall")
+def uninstall(payload: UninstallRequest):
+    try:
+        uninstall_service.start_uninstall(delete_library=payload.delete_library)
+    except updates_service.UpdateError as e:
+        raise _api_error(status.HTTP_409_CONFLICT, e.code, str(e))
+    return {"status": "ok"}
 
 
 @app.get("/api/voices", response_model=List[VoiceItem])

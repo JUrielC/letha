@@ -187,6 +187,23 @@ export const fr: Messages = {
     upToDate: (version) => `Vous avez la dernière version (${version}).`,
     noReleases: "Aucune version n’a encore été publiée.",
     checkFailed: "Impossible de rechercher des mises à jour.",
+    uninstall: "Désinstaller",
+    uninstallHint:
+      "Supprimez Letha de cet ordinateur. Vous pouvez conserver votre bibliothèque au cas où vous le réinstalleriez.",
+    uninstallApp: "Désinstaller Letha",
+    uninstallDescription: "Supprime l’app, ses raccourcis et ses fichiers temporaires.",
+    uninstallButton: "Désinstaller…",
+    uninstallUnavailable:
+      "Seule une copie installée avec l’installateur de Letha et ouverte depuis son icône peut être désinstallée ici.",
+    uninstallConfirmTitle: "Désinstaller Letha ?",
+    uninstallConfirmBody: "Letha va se fermer et sera supprimé de cet ordinateur.",
+    uninstallDeleteLibrary: "Supprimer aussi ma bibliothèque : livres, audios et progression.",
+    uninstallConfirm: "Désinstaller",
+    uninstalling: "Désinstallation…",
+    uninstallStarted: "Letha va se fermer et sera supprimé dans quelques secondes.",
+    uninstallStartedWindows:
+      "Letha est en cours de suppression. Si cette fenêtre ne se ferme pas toute seule, vous pouvez la fermer.",
+    uninstallFailed: "Letha n’a pas pu être désinstallé.",
     footer: "Les voix neuronales proviennent de Microsoft Edge TTS et nécessitent une connexion internet.",
   },
   reader: {

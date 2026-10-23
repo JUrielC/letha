@@ -925,6 +925,94 @@ def test_updater_reopens_the_installed_app_when_the_installer_fails(tmp_path):
     assert opened.read_text().strip() == f"-b {updates_service.MACOS_BUNDLE_ID}"
 
 
+def test_uninstall_refused_outside_installed_app():
+    database.init_db()
+    res = TestClient(api.app).post("/api/uninstall", json={})
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "not_installer_copy"
+
+
+def test_uninstall_launches_uninstaller_and_keeps_library_unless_asked(monkeypatch, tmp_path):
+    from letha.services import uninstall as uninstall_service
+    from letha.services import updates as updates_service
+
+    launched, exits = [], []
+    monkeypatch.setattr(updates_service, "self_update_unavailable_reason", lambda: None)
+    monkeypatch.setattr(
+        updates_service, "_launch_detached", lambda script, log: launched.append(script.read_text(encoding="utf-8"))
+    )
+    monkeypatch.setattr(updates_service, "_schedule_exit", lambda: exits.append(1))
+    monkeypatch.setattr(uninstall_service.tempfile, "mkdtemp", lambda prefix: str(tmp_path))
+    monkeypatch.setattr(uninstall_service, "_macos_app_bundle", lambda: None)
+    monkeypatch.setattr(uninstall_service, "_windows_shortcuts", lambda: [])
+    database.init_db()
+    client = TestClient(api.app)
+
+    assert client.post("/api/uninstall", json={}).status_code == 200
+    assert client.post("/api/uninstall", json={"delete_library": True}).status_code == 200
+
+    kept, deleted = launched
+    assert "tool uninstall letha" in kept
+    assert str(config.CACHE_DIR) in kept
+    assert str(config.DATA_DIR) not in kept
+    assert str(config.DATA_DIR) in deleted
+    assert exits == [1, 1]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="El desinstalador de Windows es un script de PowerShell")
+def test_windows_uninstaller_removes_app_and_shortcuts_but_keeps_library(monkeypatch, tmp_path):
+    from letha.services import uninstall as uninstall_service
+
+    uv_calls = tmp_path / "uv-calls.txt"
+    fake_uv = tmp_path / "uv.cmd"
+    fake_uv.write_text(f'@echo %*> "{uv_calls}"\n', encoding="utf-8")
+    shortcut = tmp_path / "Desktop" / "Letha.lnk"
+    shortcut.parent.mkdir()
+    shortcut.write_text("acceso directo", encoding="utf-8")
+    (config.CACHE_DIR / "letha.log").write_text("log", encoding="utf-8")
+    monkeypatch.setattr(uninstall_service, "_uv_executable", lambda: str(fake_uv))
+    monkeypatch.setattr(uninstall_service, "_windows_shortcuts", lambda: [shortcut])
+
+    script = uninstall_service.write_uninstaller_script(tmp_path, [], delete_library=False)
+    subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)], check=True, timeout=60
+    )
+    assert uv_calls.read_text().strip() == "tool uninstall letha"
+    assert not shortcut.exists()
+    assert not config.CACHE_DIR.exists()
+    assert config.DATA_DIR.exists()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="El desinstalador de macOS es un script de shell")
+def test_macos_uninstaller_removes_app_and_library_when_asked(monkeypatch, tmp_path):
+    from letha.services import uninstall as uninstall_service
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    calls = tmp_path / "llamadas.txt"
+    for name in ("uv", "defaults"):
+        command = fake_bin / name
+        command.write_text(f'#!/bin/sh\necho "{name} $*" >> {shlex.quote(str(calls))}\n')
+        command.chmod(0o755)
+    home = tmp_path / "home"
+    bundle = home / "Applications" / "Letha.app"
+    webkit = home / "Library" / "WebKit" / uninstall_service.updates.MACOS_BUNDLE_ID
+    for directory in (bundle, webkit):
+        directory.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(uninstall_service, "_uv_executable", lambda: str(fake_bin / "uv"))
+    monkeypatch.setattr(uninstall_service, "_macos_app_bundle", lambda: bundle)
+
+    script = uninstall_service.write_uninstaller_script(tmp_path, [], delete_library=True)
+    subprocess.run(["/bin/sh", str(script)], env={"PATH": f"{fake_bin}:/usr/bin:/bin"}, check=True, timeout=30)
+    assert calls.read_text().splitlines() == [
+        "uv tool uninstall letha",
+        f"defaults delete {uninstall_service.updates.MACOS_BUNDLE_ID}",
+    ]
+    for removed in (bundle, webkit, config.CACHE_DIR, config.DATA_DIR):
+        assert not removed.exists()
+
+
 
 @pytest.mark.skipif(
     sys.platform != "darwin" or platform.machine() != "arm64", reason="El instalador es para Macs con Apple Silicon"

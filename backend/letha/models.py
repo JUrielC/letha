@@ -139,3 +139,7 @@ class SkipUpdateRequest(BaseModel):
     version: str
 
 
+class UninstallRequest(BaseModel):
+    delete_library: bool = False
+
+
