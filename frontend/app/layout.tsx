@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Instrument_Sans, Literata } from "next/font/google";
 import "./globals.css";
 import { KeepAlive } from "@/components/KeepAlive";
+import { NativeLanguageGate } from "@/components/NativeLanguageGate";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 
 const instrumentSans = Instrument_Sans({
@@ -58,6 +59,7 @@ export default function RootLayout({
       >
         <KeepAlive />
         {children}
+        <NativeLanguageGate />
         <UpdateNotifier />
       </body>
     </html>

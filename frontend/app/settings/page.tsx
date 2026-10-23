@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { LanguagePicker } from "@/components/LanguagePicker";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { api, UpdateInfo } from "@/lib/api";
+import { api, TranslationLanguage, UpdateInfo } from "@/lib/api";
+import { announceNativeLanguage, NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { Theme, useTheme } from "@/lib/useTheme";
 
 const DEFAULT_PERCENT = 85;
@@ -161,6 +163,8 @@ function SettingsContent() {
   const [checkingUpdates, setCheckingUpdates] = useState<boolean>(false);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState<boolean>(false);
+  const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
+  const [languages, setLanguages] = useState<TranslationLanguage[]>([]);
 
   const { theme, setTheme } = useTheme();
   const [fontSize, setFontSize] = useState<FontSize>("base");
@@ -183,6 +187,7 @@ function SettingsContent() {
         setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
         setAutoCheckUpdates(s.auto_check_updates ?? true);
+        setNativeLanguage(s.native_language ?? null);
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
@@ -191,6 +196,7 @@ function SettingsContent() {
       .finally(() => setLoading(false));
 
     api.getUpdates().then(setUpdateInfo).catch(() => {});
+    api.getTranslationLanguages().then(setLanguages).catch(() => {});
 
     api
       .getBooks()
@@ -251,6 +257,20 @@ function SettingsContent() {
   const handleBoundaryChange = (nextBoundary: Boundary) => {
     setBoundaryType(nextBoundary);
     saveSettings(percent, autoAdvance, nextBoundary, autoAdvancePage);
+  };
+
+  useEffect(() => {
+    const onNativeLanguage = (e: Event) => setNativeLanguage((e as CustomEvent<string>).detail);
+    window.addEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
+    return () => window.removeEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
+  }, []);
+
+  const handleNativeLanguageChange = (code: string) => {
+    setNativeLanguage(code);
+    api
+      .updateAppSettings({ native_language: code })
+      .then(() => announceNativeLanguage(code))
+      .catch((err) => setError(err.message || "No se pudo guardar la configuración."));
   };
 
   const handleAutoCheckUpdatesChange = (enabled: boolean) => {
@@ -449,6 +469,28 @@ function SettingsContent() {
           </div>
         ) : (
           <div className="divide-y divide-[var(--track)]">
+            {/* Idioma nativo */}
+            <section aria-labelledby="settings-native-language-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
+              <div className="flex-1 min-w-[280px] max-w-[380px]">
+                <h2 id="settings-native-language-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
+                  Idioma nativo
+                </h2>
+                <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
+                  Letha traduce a este idioma las oraciones que lees y escuchas.
+                </p>
+              </div>
+
+              <div
+                className="glass flex-[999_1_560px] min-w-0 p-2.5 rounded-[26px]"
+                style={{
+                  background: "var(--glass-sub)",
+                  boxShadow: "var(--ring-sub)",
+                }}
+              >
+                <LanguagePicker languages={languages} value={nativeLanguage} onChange={handleNativeLanguageChange} />
+              </div>
+            </section>
+
             <OptionGrid
               name="reading-mode"
               legend="Modo de lectura"

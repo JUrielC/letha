@@ -877,6 +877,124 @@ def test_updater_script_waits_for_the_app_and_runs_installer(tmp_path):
     assert marker.read_text().strip() == str(wheel)
 
 
+class FakeProvider:
+    def __init__(self, name, fail=False, prefix=""):
+        self.name = name
+        self.fail = fail
+        self.prefix = prefix or f"{name}:"
+        self.max_items = 100
+        self.max_chars = 100000
+        self.calls = []
+
+    def translate(self, texts, source, target):
+        from letha.services.translation import ProviderError
+
+        self.calls.append(list(texts))
+        if self.fail:
+            raise ProviderError("caído")
+        return [f"{self.prefix}{t}" for t in texts]
+
+
+def test_native_language_starts_unset_and_is_validated():
+    database.init_db()
+    client = TestClient(api.app)
+
+    assert client.get("/api/settings").json()["native_language"] is None
+    assert client.put("/api/settings", json={"native_language": "xx"}).status_code == 400
+    res = client.put("/api/settings", json={"native_language": "es"})
+    assert res.status_code == 200
+    assert res.json()["native_language"] == "es"
+    assert client.get("/api/settings").json()["native_language"] == "es"
+
+    languages = client.get("/api/translation/languages").json()
+    assert {"code": "es", "name": "Español"} in languages
+    assert {"code": "ja", "name": "日本語"} in languages
+
+
+def test_translation_falls_back_to_next_provider_and_caches(monkeypatch):
+    from letha.services import translation as translation_service
+
+    microsoft = FakeProvider("microsoft", fail=True)
+    google = FakeProvider("google")
+    monkeypatch.setattr(translation_service, "PROVIDERS", [microsoft, google])
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    database.init_db()
+
+    first = translation_service.translate(["Hello.", "Bye.", "Hello."], "en", "es")
+    assert first == {"translations": ["google:Hello.", "google:Bye.", "google:Hello."], "provider": "google"}
+    assert microsoft.calls == [["Hello.", "Bye."]]
+
+    assert translation_service.translate(["Bye.", "Hello."], "en", "es")["provider"] == "cache"
+    assert len(google.calls) == 1
+
+    # Microsoft queda en pausa tras fallar, así que el siguiente texto va directo a Google
+    assert translation_service.translate(["New."], "en", "es")["translations"] == ["google:New."]
+    assert len(microsoft.calls) == 1
+
+    google.fail = True
+    offline = translation_service.translate(["Hello.", "Unknown."], "en", "es")
+    assert offline == {"translations": ["google:Hello.", None], "provider": None}
+
+    assert translation_service.translate(["Igual."], "es", "es")["translations"] == ["Igual."]
+
+
+def test_translation_batches_respect_provider_limits():
+    from letha.services import translation as translation_service
+
+    provider = FakeProvider("x")
+    provider.max_items, provider.max_chars = 2, 10
+    batches = list(translation_service._batches(["aaaa", "bbbb", "cc", "dddddddddd", "e"], provider))
+    assert batches == [["aaaa", "bbbb"], ["cc"], ["dddddddddd"], ["e"]]
+
+
+def test_providers_parse_real_response_shapes(monkeypatch):
+    from letha.services import translation as translation_service
+
+    requests = []
+
+    def fake_post(url, body, content_type):
+        requests.append((url, body, content_type))
+        if "microsoft" in url:
+            return [{"translations": [{"text": "Hola.", "to": "es"}]}, {"translations": [{"text": "Adiós.", "to": "es"}]}]
+        return [["你好。", "en"], "再见。"]
+
+    monkeypatch.setattr(translation_service, "_post_json", fake_post)
+    assert translation_service.MicrosoftProvider().translate(["Hello.", "Bye."], "en", "es") == ["Hola.", "Adiós."]
+    assert translation_service.GoogleProvider().translate(["Hello.", "Bye."], "en", "zh") == ["你好。", "再见。"]
+
+    ms_url, ms_body, _ = requests[0]
+    assert "from=en&to=es" in ms_url and json.loads(ms_body) == ["Hello.", "Bye."]
+    google_url, google_body, _ = requests[1]
+    assert "tl=zh-CN" in google_url and google_body == b"q=Hello.&q=Bye."
+
+
+def test_chapter_translations_endpoint(monkeypatch):
+    from letha.services import translation as translation_service
+
+    provider = FakeProvider("microsoft", prefix="ES: ")
+    monkeypatch.setattr(translation_service, "PROVIDERS", [provider])
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    database.init_db()
+    client = TestClient(api.app)
+    book_id = client.post(
+        "/api/books/upload",
+        files={"file": ("holly.pdf", io.BytesIO(create_structured_pdf()), "application/pdf")},
+        data={"voice": "en-US-AvaNeural", "language": "en"},
+    ).json()["id"]
+
+    assert client.get(f"/api/books/{book_id}/chapters/0/translations").status_code == 409
+
+    client.put("/api/settings", json={"native_language": "es"})
+    res = client.get(f"/api/books/{book_id}/chapters/0/translations")
+    assert res.status_code == 200
+    data = res.json()
+    sentences = [s["text"] for s in client.get(f"/api/books/{book_id}/chapters/0").json()["sentences"]]
+    assert data["source"] == "en" and data["target"] == "es"
+    assert data["translations"] == [f"ES: {s}" for s in sentences]
+    assert data["provider"] == "microsoft"
+    assert client.get(f"/api/books/{book_id}/chapters/0/translations").json()["provider"] == "cache"
+
+
 def test_edge_tts_default_rate_is_85_percent():
     """Verifica que la velocidad base nativa de edge-tts sea 85% (-15%) por defecto y sea configurable."""
     from letha.services import tts as tts_service

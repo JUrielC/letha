@@ -95,6 +95,7 @@ class AppSettings(BaseModel):
     auto_advance_page: bool = True
     boundary_type: str = "SentenceBoundary"
     auto_check_updates: bool = True
+    native_language: Optional[str] = None
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -103,6 +104,19 @@ class UpdateAppSettingsRequest(BaseModel):
     auto_advance_page: Optional[bool] = None
     boundary_type: Optional[str] = None
     auto_check_updates: Optional[bool] = None
+    native_language: Optional[str] = None
+
+
+class TranslationLanguage(BaseModel):
+    code: str
+    name: str
+
+
+class ChapterTranslations(BaseModel):
+    source: str
+    target: str
+    translations: List[Optional[str]]
+    provider: Optional[str] = None
 
 
 class UpdateInfo(BaseModel):

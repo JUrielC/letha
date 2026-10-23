@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Headphones,
+  Languages,
   List,
   Loader2,
   Pause,
@@ -25,6 +26,7 @@ import {
   WordTiming,
   getBaseUrl,
 } from "@/lib/api";
+import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { Theme, useTheme } from "@/lib/useTheme";
 
 type FontSize = "sm" | "base" | "lg" | "xl";
@@ -102,6 +104,11 @@ function ReaderContent() {
     "SentenceBoundary"
   );
   const [activeWordKey, setActiveWordKey] = useState<string | null>(null);
+  const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
+  const [languageNames, setLanguageNames] = useState<Record<string, string>>({});
+  const [translations, setTranslations] = useState<Record<number, (string | null)[]>>({});
+  const [translationFailed, setTranslationFailed] = useState<Record<number, boolean>>({});
+  const [showTranslation, setShowTranslation] = useState<boolean>(true);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
@@ -124,6 +131,7 @@ function ReaderContent() {
     try {
       const savedFont = (localStorage.getItem("letha_fontsize") as FontSize) || "base";
       setFontSize(savedFont);
+      setShowTranslation(localStorage.getItem("letha_show_translation") !== "0");
     } catch {}
 
     api.getVoices().then(setVoices).catch(console.error);
@@ -135,9 +143,45 @@ function ReaderContent() {
         setBoundaryType(
           s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary"
         );
+        setNativeLanguage(s.native_language ?? null);
       })
       .catch(console.error);
+    api
+      .getTranslationLanguages()
+      .then((list) => setLanguageNames(Object.fromEntries(list.map((l) => [l.code, l.name]))))
+      .catch(() => {});
+
+    const onNativeLanguage = (e: Event) => {
+      setNativeLanguage((e as CustomEvent<string>).detail);
+      setTranslations({});
+      setTranslationFailed({});
+    };
+    window.addEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
+    return () => window.removeEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
   }, []);
+
+  const translationEnabled = !!nativeLanguage && !!book && book.language !== nativeLanguage;
+
+  useEffect(() => {
+    if (!translationEnabled || !bookId || !book || currentChapterIdx === null) return;
+    let ignore = false;
+    const load = (idx: number) =>
+      api.getChapterTranslations(bookId, idx).then((res) => {
+        if (!ignore) setTranslations((prev) => ({ ...prev, [idx]: res.translations }));
+        return res;
+      });
+
+    load(currentChapterIdx)
+      .then(() => {
+        if (currentChapterIdx + 1 < book.chapters.length) load(currentChapterIdx + 1).catch(() => {});
+      })
+      .catch(() => {
+        if (!ignore) setTranslationFailed((prev) => ({ ...prev, [currentChapterIdx]: true }));
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [translationEnabled, bookId, book, currentChapterIdx, nativeLanguage]);
 
   useEffect(() => {
     if (!isAaOpen && !isTocOpen) return;
@@ -669,8 +713,34 @@ function ReaderContent() {
     book && book.total_chapters > 0 && currentChapterIdx !== null
       ? Math.min(100, Math.round(((currentChapterIdx + 1) / book.total_chapters) * 100))
       : 0;
+
+  const toggleTranslation = () => {
+    setShowTranslation((prev) => {
+      try {
+        localStorage.setItem("letha_show_translation", prev ? "0" : "1");
+      } catch {}
+      return !prev;
+    });
+  };
+
+  const translationPanelVisible = translationEnabled && showTranslation && !!chapter;
+  const chapterTranslations = currentChapterIdx !== null ? translations[currentChapterIdx] : undefined;
+  const activeTranslation =
+    activeSentenceIdx >= 0 ? chapterTranslations?.[activeSentenceIdx] ?? null : null;
+  let translationMessage: string | null = null;
+  if (!chapterTranslations) {
+    translationMessage =
+      currentChapterIdx !== null && translationFailed[currentChapterIdx]
+        ? "No se pudo traducir esta página. Revisa tu conexión."
+        : "Traduciendo…";
+  } else if (activeSentenceIdx < 0) {
+    translationMessage = "Toca una oración o pulsa reproducir para ver su traducción.";
+  } else if (!activeTranslation) {
+    translationMessage = "No se pudo traducir esta oración. Revisa tu conexión.";
+  }
+
   return (
-    <div className="min-h-screen flex flex-col pb-36">
+    <div className={`min-h-screen flex flex-col ${translationPanelVisible ? "pb-64" : "pb-36"}`}>
       {audioUrl && (
         <audio
           ref={audioRef}
@@ -777,6 +847,23 @@ function ReaderContent() {
             </div>
 
             <div className="flex-1 min-w-0 flex items-center justify-end gap-1">
+              {translationEnabled && (
+                <button
+                  type="button"
+                  onClick={toggleTranslation}
+                  aria-pressed={showTranslation}
+                  aria-label={showTranslation ? "Ocultar traducción" : "Mostrar traducción"}
+                  title={showTranslation ? "Ocultar traducción" : "Mostrar traducción"}
+                  className="quiet inline-flex items-center justify-center w-10 h-10 rounded-full border-0 cursor-pointer"
+                  style={{
+                    background: showTranslation ? "var(--hover)" : "transparent",
+                    color: showTranslation ? "var(--ink)" : "var(--muted)",
+                  }}
+                >
+                  <Languages className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -1071,7 +1158,35 @@ function ReaderContent() {
       </main>
 
       {/* Reproductor fijo abajo */}
-      <footer className="fixed bottom-5 left-0 right-0 z-30 px-4 pointer-events-none flex justify-center">
+      <footer className="fixed bottom-5 left-0 right-0 z-30 px-4 pointer-events-none flex flex-col items-center gap-2">
+        {translationPanelVisible && (
+          <div
+            aria-live="polite"
+            className="glass-strong pointer-events-auto w-full max-w-[760px] rounded-[24px] px-5 py-3 max-h-[132px] overflow-y-auto box-border"
+            style={{
+              background: "var(--glass-dock)",
+              boxShadow: "var(--shadow-dock)",
+            }}
+          >
+            <p className="m-0 mb-1 text-[12px] font-medium" style={{ color: "var(--muted)" }}>
+              Traducción · {languageNames[nativeLanguage as string] ?? nativeLanguage}
+            </p>
+            {translationMessage ? (
+              <p className="m-0 text-sm" style={{ color: "var(--muted)" }}>
+                {translationMessage}
+              </p>
+            ) : (
+              <p
+                lang={nativeLanguage ?? undefined}
+                className="m-0 font-serif text-[17px] leading-relaxed"
+                style={{ color: "var(--ink)" }}
+              >
+                {activeTranslation}
+              </p>
+            )}
+          </div>
+        )}
+
         <div
           className="glass-strong pointer-events-auto w-full max-w-[760px] rounded-[30px] p-[10px] pl-2.5 pr-3.5 flex flex-wrap items-center gap-3"
           style={{

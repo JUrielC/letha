@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from letha import config
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
@@ -68,6 +68,19 @@ def init_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters (book_id, idx)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS translations (
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                text TEXT NOT NULL,
+                translation TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (source, target, text)
+            )
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -232,6 +245,40 @@ def get_auto_check_updates() -> bool:
 def set_auto_check_updates(enabled: bool) -> bool:
     set_setting("auto_check_updates", "1" if enabled else "0")
     return bool(enabled)
+
+
+def get_native_language() -> Optional[str]:
+    return get_setting("native_language")
+
+
+def set_native_language(language: str) -> str:
+    set_setting("native_language", language)
+    return language
+
+
+def get_cached_translations(source: str, target: str, texts: Sequence[str]) -> Dict[str, str]:
+    unique = list(dict.fromkeys(texts))
+    found: Dict[str, str] = {}
+    with get_connection() as conn:
+        # SQLite limita la cantidad de parámetros por consulta
+        for start in range(0, len(unique), 500):
+            chunk = unique[start:start + 500]
+            rows = conn.execute(
+                f"SELECT text, translation FROM translations WHERE source = ? AND target = ? AND text IN ({','.join('?' * len(chunk))})",
+                (source, target, *chunk),
+            ).fetchall()
+            found.update({r["text"]: r["translation"] for r in rows})
+    return found
+
+
+def store_translations(source: str, target: str, translations: Dict[str, str], provider: str) -> None:
+    now = int(time.time())
+    with get_connection() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO translations (source, target, text, translation, provider, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [(source, target, text, translation, provider, now) for text, translation in translations.items()],
+        )
+        conn.commit()
 
 
 def get_boundary_type() -> str:

@@ -74,6 +74,19 @@ export interface AppSettings {
   auto_advance_page: boolean;
   boundary_type: "SentenceBoundary" | "WordBoundary";
   auto_check_updates: boolean;
+  native_language: string | null;
+}
+
+export interface TranslationLanguage {
+  code: string;
+  name: string;
+}
+
+export interface ChapterTranslations {
+  source: string;
+  target: string;
+  translations: (string | null)[];
+  provider: string | null;
 }
 
 export interface UpdateInfo {
@@ -156,12 +169,18 @@ export const api = {
     auto_advance_page?: boolean;
     boundary_type?: "SentenceBoundary" | "WordBoundary";
     auto_check_updates?: boolean;
+    native_language?: string;
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+  getTranslationLanguages: () => request<TranslationLanguage[]>("/api/translation/languages"),
+
+  getChapterTranslations: (bookId: string, chapterIdx: number) =>
+    request<ChapterTranslations>(`/api/books/${bookId}/chapters/${chapterIdx}/translations`),
 
   getUpdates: (force = false) =>
     request<UpdateInfo>(`/api/updates${force ? "?force=true" : ""}`),

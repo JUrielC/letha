@@ -24,7 +24,9 @@ from letha.models import (
     BookDetail,
     BookSummary,
     ChapterDetail,
+    ChapterTranslations,
     SkipUpdateRequest,
+    TranslationLanguage,
     UpdateAppSettingsRequest,
     UpdateBookSettingsRequest,
     UpdateInfo,
@@ -32,6 +34,7 @@ from letha.models import (
     VoiceItem,
 )
 from letha.services import pdf as pdf_service
+from letha.services import translation as translation_service
 from letha.services import tts as tts_service
 from letha.services import updates as updates_service
 
@@ -125,11 +128,17 @@ def get_app_settings():
         auto_advance_page=database.get_auto_advance_page(),
         boundary_type=database.get_boundary_type(),
         auto_check_updates=database.get_auto_check_updates(),
+        native_language=database.get_native_language(),
     )
 
 
 @app.put("/api/settings", response_model=AppSettings)
 def update_app_settings(payload: UpdateAppSettingsRequest):
+    if payload.native_language is not None and payload.native_language not in translation_service.NATIVE_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idioma nativo no soportado.",
+        )
     speed = (
         database.set_edge_base_speed(payload.edge_base_speed)
         if payload.edge_base_speed is not None
@@ -155,13 +164,27 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.auto_check_updates is not None
         else database.get_auto_check_updates()
     )
+    native = (
+        database.set_native_language(payload.native_language)
+        if payload.native_language is not None
+        else database.get_native_language()
+    )
     return AppSettings(
         edge_base_speed=speed,
         auto_advance_sentence=auto_adv,
         auto_advance_page=auto_adv_page,
         boundary_type=b_type,
         auto_check_updates=check_updates,
+        native_language=native,
     )
+
+
+@app.get("/api/translation/languages", response_model=List[TranslationLanguage])
+def get_translation_languages():
+    return [
+        TranslationLanguage(code=code, name=name)
+        for code, name in translation_service.NATIVE_LANGUAGES.items()
+    ]
 
 
 @app.get("/api/updates", response_model=UpdateInfo)
@@ -333,6 +356,28 @@ def get_chapter(book_id: str, chapter_idx: int, voice: Optional[str] = None):
     if not chapter:
         raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
     return chapter
+
+
+@app.get("/api/books/{book_id}/chapters/{chapter_idx}/translations", response_model=ChapterTranslations)
+def get_chapter_translations(book_id: str, chapter_idx: int):
+    """
+    Síncrona a propósito: FastAPI la ejecuta en su threadpool y las peticiones a los
+    proveedores de traducción no bloquean el event loop.
+    """
+    book = database.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+    native = database.get_native_language()
+    if not native:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Configura tu idioma nativo para ver traducciones.",
+        )
+    chapter = database.get_chapter(book_id, chapter_idx)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
+    result = translation_service.translate([s.text for s in chapter.sentences], book.language, native)
+    return ChapterTranslations(source=book.language, target=native, **result)
 
 
 @app.post("/api/books/{book_id}/chapters/{chapter_idx}/synthesize")
