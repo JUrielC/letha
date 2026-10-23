@@ -73,6 +73,24 @@ export interface AppSettings {
   auto_advance_sentence: boolean;
   auto_advance_page: boolean;
   boundary_type: "SentenceBoundary" | "WordBoundary";
+  auto_check_updates: boolean;
+}
+
+export interface UpdateInfo {
+  current_version: string;
+  platform: string;
+  can_self_update: boolean;
+  self_update_unavailable_reason?: string | null;
+  install_command?: string | null;
+  latest_version?: string | null;
+  update_available: boolean;
+  skipped: boolean;
+  notes: string[];
+  release_url?: string | null;
+  published_at?: string | null;
+  checked_at?: number | null;
+  updated_from?: string | null;
+  error?: string | null;
 }
 
 declare global {
@@ -137,12 +155,29 @@ export const api = {
     auto_advance_sentence?: boolean;
     auto_advance_page?: boolean;
     boundary_type?: "SentenceBoundary" | "WordBoundary";
+    auto_check_updates?: boolean;
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+  getUpdates: (force = false) =>
+    request<UpdateInfo>(`/api/updates${force ? "?force=true" : ""}`),
+
+  skipUpdate: (version: string) =>
+    request<{ status: string }>("/api/updates/skip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    }),
+
+  acknowledgeUpdate: () =>
+    request<{ status: string }>("/api/updates/acknowledge", { method: "POST" }),
+
+  installUpdate: () =>
+    request<{ version: string }>("/api/updates/install", { method: "POST" }),
 
   getVoicePreviewUrl: (voice: string) =>
     `${getBaseUrl()}/api/voices/preview?voice=${encodeURIComponent(voice)}`,

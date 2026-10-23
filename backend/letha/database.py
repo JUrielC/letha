@@ -207,6 +207,33 @@ def set_auto_advance_page(enabled: bool) -> bool:
     return bool(enabled)
 
 
+def get_setting(key: str) -> Optional[str]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
+        )
+        conn.commit()
+
+
+def get_auto_check_updates() -> bool:
+    return get_setting("auto_check_updates") != "0"
+
+
+def set_auto_check_updates(enabled: bool) -> bool:
+    set_setting("auto_check_updates", "1" if enabled else "0")
+    return bool(enabled)
+
+
 def get_boundary_type() -> str:
     with get_connection() as conn:
         row = conn.execute(

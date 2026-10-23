@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Instrument_Sans, Literata } from "next/font/google";
 import "./globals.css";
 import { KeepAlive } from "@/components/KeepAlive";
+import { UpdateNotifier } from "@/components/UpdateNotifier";
 
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
@@ -57,6 +58,7 @@ export default function RootLayout({
       >
         <KeepAlive />
         {children}
+        <UpdateNotifier />
       </body>
     </html>
   );

@@ -94,6 +94,7 @@ class AppSettings(BaseModel):
     auto_advance_sentence: bool = True
     auto_advance_page: bool = True
     boundary_type: str = "SentenceBoundary"
+    auto_check_updates: bool = True
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -101,5 +102,27 @@ class UpdateAppSettingsRequest(BaseModel):
     auto_advance_sentence: Optional[bool] = None
     auto_advance_page: Optional[bool] = None
     boundary_type: Optional[str] = None
+    auto_check_updates: Optional[bool] = None
+
+
+class UpdateInfo(BaseModel):
+    current_version: str
+    platform: str
+    can_self_update: bool = False
+    self_update_unavailable_reason: Optional[str] = None
+    install_command: Optional[str] = None
+    latest_version: Optional[str] = None
+    update_available: bool = False
+    skipped: bool = False
+    notes: List[str] = []
+    release_url: Optional[str] = None
+    published_at: Optional[str] = None
+    checked_at: Optional[float] = None
+    updated_from: Optional[str] = None
+    error: Optional[str] = None
+
+
+class SkipUpdateRequest(BaseModel):
+    version: str
 
 

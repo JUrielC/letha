@@ -24,13 +24,16 @@ from letha.models import (
     BookDetail,
     BookSummary,
     ChapterDetail,
+    SkipUpdateRequest,
     UpdateAppSettingsRequest,
     UpdateBookSettingsRequest,
+    UpdateInfo,
     UpdateProgressRequest,
     VoiceItem,
 )
 from letha.services import pdf as pdf_service
 from letha.services import tts as tts_service
+from letha.services import updates as updates_service
 
 _required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
 _active_jobs: int = 0
@@ -121,6 +124,7 @@ def get_app_settings():
         auto_advance_sentence=database.get_auto_advance_sentence(),
         auto_advance_page=database.get_auto_advance_page(),
         boundary_type=database.get_boundary_type(),
+        auto_check_updates=database.get_auto_check_updates(),
     )
 
 
@@ -146,12 +150,43 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.boundary_type is not None
         else database.get_boundary_type()
     )
+    check_updates = (
+        database.set_auto_check_updates(payload.auto_check_updates)
+        if payload.auto_check_updates is not None
+        else database.get_auto_check_updates()
+    )
     return AppSettings(
         edge_base_speed=speed,
         auto_advance_sentence=auto_adv,
         auto_advance_page=auto_adv_page,
         boundary_type=b_type,
+        auto_check_updates=check_updates,
     )
+
+
+@app.get("/api/updates", response_model=UpdateInfo)
+def get_updates(force: bool = False):
+    return updates_service.check_for_updates(force=force)
+
+
+@app.post("/api/updates/skip")
+def skip_update(payload: SkipUpdateRequest):
+    updates_service.skip_version(payload.version)
+    return {"status": "ok"}
+
+
+@app.post("/api/updates/acknowledge")
+def acknowledge_update():
+    updates_service.acknowledge_update()
+    return {"status": "ok"}
+
+
+@app.post("/api/updates/install")
+def install_update():
+    try:
+        return updates_service.start_update()
+    except updates_service.UpdateError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @app.get("/api/voices", response_model=List[VoiceItem])

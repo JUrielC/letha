@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { api } from "@/lib/api";
+import { UpdateDialog } from "@/components/UpdateDialog";
+import { api, UpdateInfo } from "@/lib/api";
 import { Theme, useTheme } from "@/lib/useTheme";
 
 const DEFAULT_PERCENT = 85;
@@ -155,6 +156,11 @@ function SettingsContent() {
   const [error, setError] = useState<string | null>(null);
   const [sampleVoice, setSampleVoice] = useState<string>(DEFAULT_VOICE);
   const [sampleState, setSampleState] = useState<"idle" | "loading" | "playing">("idle");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true);
+  const [checkingUpdates, setCheckingUpdates] = useState<boolean>(false);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState<boolean>(false);
 
   const { theme, setTheme } = useTheme();
   const [fontSize, setFontSize] = useState<FontSize>("base");
@@ -176,12 +182,15 @@ function SettingsContent() {
         setAutoAdvance(s.auto_advance_sentence ?? true);
         setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
+        setAutoCheckUpdates(s.auto_check_updates ?? true);
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
         setError("No se pudo cargar la configuración actual.");
       })
       .finally(() => setLoading(false));
+
+    api.getUpdates().then(setUpdateInfo).catch(() => {});
 
     api
       .getBooks()
@@ -242,6 +251,37 @@ function SettingsContent() {
   const handleBoundaryChange = (nextBoundary: Boundary) => {
     setBoundaryType(nextBoundary);
     saveSettings(percent, autoAdvance, nextBoundary, autoAdvancePage);
+  };
+
+  const handleAutoCheckUpdatesChange = (enabled: boolean) => {
+    setAutoCheckUpdates(enabled);
+    api.updateAppSettings({ auto_check_updates: enabled }).catch((err) => {
+      setError(err.message || "No se pudo guardar la configuración.");
+    });
+  };
+
+  const handleCheckUpdates = async () => {
+    setCheckingUpdates(true);
+    setUpdateMessage(null);
+    try {
+      const info = await api.getUpdates(true);
+      setUpdateInfo(info);
+      if (info.error) {
+        setUpdateMessage(info.error);
+      } else if (info.update_available) {
+        setUpdateDialogOpen(true);
+      } else {
+        setUpdateMessage(
+          info.latest_version
+            ? `Tienes la última versión (${info.current_version}).`
+            : "Todavía no hay versiones publicadas."
+        );
+      }
+    } catch (err: any) {
+      setUpdateMessage(err.message || "No se pudo buscar actualizaciones.");
+    } finally {
+      setCheckingUpdates(false);
+    }
   };
 
   const handlePresetClick = (p: number) => {
@@ -758,7 +798,119 @@ function SettingsContent() {
                 </div>
               </div>
             </section>
+
+            {/* Actualizaciones */}
+            <section aria-labelledby="updates-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
+              <div className="flex-1 min-w-[280px] max-w-[380px]">
+                <h2 id="updates-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
+                  Actualizaciones
+                </h2>
+                <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
+                  Letha te avisa cuando hay una versión nueva y solo se actualiza cuando tú lo decides. Tu biblioteca y tu progreso se conservan.
+                </p>
+              </div>
+
+              <div
+                className="glass flex-[999_1_560px] min-w-0 p-2.5 rounded-[26px] flex flex-col gap-2.5"
+                style={{
+                  background: "var(--glass-sub)",
+                  boxShadow: "var(--ring-sub)",
+                }}
+              >
+                <div
+                  className="p-4 rounded-[20px] flex flex-wrap items-center justify-between gap-4"
+                  style={{ background: "var(--tile-off)", boxShadow: "var(--shadow-tile-off)" }}
+                >
+                  <div className="min-w-0">
+                    <p className="m-0 text-[15px] font-medium" style={{ color: "var(--ink)" }}>
+                      Versión instalada: {updateInfo?.current_version ?? "…"}
+                    </p>
+                    {updateMessage && (
+                      <p className="m-0 mt-1 text-sm" style={{ color: "var(--soft)" }}>
+                        {updateMessage}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdates}
+                    disabled={checkingUpdates}
+                    className="glbtn inline-flex items-center gap-2 h-10 px-4 rounded-full border-0 text-sm font-medium cursor-pointer disabled:opacity-60"
+                    style={{ background: "var(--btn-ghost)", color: "var(--ink)" }}
+                  >
+                    {checkingUpdates ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                    <span>Buscar actualizaciones</span>
+                  </button>
+                </div>
+
+                <div
+                  className="p-4 rounded-[20px] flex items-center justify-between gap-4 transition"
+                  style={{
+                    background: autoCheckUpdates ? "var(--glass-seg-on)" : "var(--tile-off)",
+                    boxShadow: autoCheckUpdates
+                      ? "inset 0 0 0 1.5px var(--accent-border), var(--shadow-tile-on)"
+                      : "var(--shadow-tile-off)",
+                  }}
+                >
+                  <div className="flex-1 min-w-0 pr-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-medium" style={{ color: "var(--ink)" }}>
+                        Buscar al abrir Letha
+                      </span>
+                      <span className="text-xs" style={{ color: "var(--muted)" }}>
+                        Por defecto
+                      </span>
+                    </div>
+                    <p className="m-0 mt-1 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
+                      Consulta como mucho una vez al día si hay una versión nueva y te avisa en la biblioteca.
+                    </p>
+                  </div>
+
+                  <label
+                    htmlFor="auto-check-updates-toggle"
+                    className="relative inline-flex items-center shrink-0 cursor-pointer select-none"
+                    aria-label="Buscar actualizaciones al abrir Letha"
+                  >
+                    <input
+                      id="auto-check-updates-toggle"
+                      type="checkbox"
+                      checked={autoCheckUpdates}
+                      onChange={(e) => handleAutoCheckUpdatesChange(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div
+                      className="w-12 h-7 rounded-full transition-colors flex items-center px-0.5"
+                      style={{
+                        background: autoCheckUpdates ? "var(--accent)" : "var(--dot-off)",
+                      }}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-full bg-white shadow-md transform transition-transform ${
+                          autoCheckUpdates ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </section>
           </div>
+        )}
+
+        {updateDialogOpen && updateInfo && (
+          <UpdateDialog
+            info={updateInfo}
+            mode="available"
+            onClose={() => setUpdateDialogOpen(false)}
+            onSkip={() => {
+              setUpdateDialogOpen(false);
+              if (updateInfo.latest_version) api.skipUpdate(updateInfo.latest_version).catch(() => {});
+            }}
+          />
         )}
 
         {error && (
@@ -777,7 +929,7 @@ function SettingsContent() {
 
         <footer className="pt-8 border-t" style={{ borderColor: "var(--track)" }}>
           <p className="m-0 text-[13px]" style={{ color: "var(--muted)" }}>
-            Letha 0.1.1 · Las voces neurales vienen de Microsoft Edge TTS y necesitan conexión a internet.
+            Letha{updateInfo ? ` ${updateInfo.current_version}` : ""} · Las voces neurales vienen de Microsoft Edge TTS y necesitan conexión a internet.
           </p>
         </footer>
       </main>

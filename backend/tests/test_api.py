@@ -3,11 +3,18 @@ Pruebas de la API y del servidor empaquetado de Letha con TestClient.
 """
 
 import asyncio
+import hashlib
 import io
 import json
+import shlex
 import sqlite3
+import subprocess
+import sys
+import time
+from pathlib import Path
 from fastapi.testclient import TestClient
 import pymupdf
+import pytest
 
 from letha import api, config, database
 from letha.app import build_app
@@ -664,6 +671,210 @@ def test_existing_books_get_paragraphs_from_their_pdf():
         )
     database.init_db()
     assert client.get(f"/api/books/{book_id}/chapters/1").json()["text_content"] == "Texto editado."
+
+
+def fake_release(version="9.9.9", assets=None):
+    return {
+        "version": version,
+        "notes": ["Nueva función"],
+        "url": f"https://github.com/JUrielC/letha/releases/tag/v{version}",
+        "published_at": "2026-10-23T00:00:00Z",
+        "assets": assets or {},
+    }
+
+
+def test_update_check_reports_new_version_and_caches_it(monkeypatch):
+    from letha import __version__
+    from letha.services import updates as updates_service
+
+    calls = []
+    monkeypatch.setattr(updates_service, "fetch_latest_release", lambda: calls.append(1) or fake_release())
+    database.init_db()
+    client = TestClient(api.app)
+
+    info = client.get("/api/updates").json()
+    assert info["current_version"] == __version__
+    assert info["latest_version"] == "9.9.9"
+    assert info["update_available"] is True
+    assert info["notes"] == ["Nueva función"]
+    assert info["can_self_update"] is False
+
+    client.get("/api/updates")
+    assert len(calls) == 1
+    client.get("/api/updates?force=true")
+    assert len(calls) == 2
+
+
+def test_update_check_respects_settings_and_skipped_version(monkeypatch):
+    from letha.services import updates as updates_service
+
+    calls = []
+    monkeypatch.setattr(updates_service, "fetch_latest_release", lambda: calls.append(1) or fake_release())
+    database.init_db()
+    client = TestClient(api.app)
+
+    client.put("/api/settings", json={"auto_check_updates": False})
+    assert client.get("/api/settings").json()["auto_check_updates"] is False
+    assert client.get("/api/updates").json()["update_available"] is False
+    assert calls == []
+
+    assert client.get("/api/updates?force=true").json()["update_available"] is True
+    client.post("/api/updates/skip", json={"version": "9.9.9"})
+    assert client.get("/api/updates?force=true").json()["skipped"] is True
+
+
+def test_update_check_without_releases_or_connection(monkeypatch):
+    from letha.services import updates as updates_service
+
+    database.init_db()
+    client = TestClient(api.app)
+
+    monkeypatch.setattr(updates_service, "fetch_latest_release", lambda: None)
+    info = client.get("/api/updates?force=true").json()
+    assert info["latest_version"] is None
+    assert info["update_available"] is False
+    assert info["error"] is None
+
+    def offline():
+        raise OSError("sin red")
+
+    monkeypatch.setattr(updates_service, "fetch_latest_release", offline)
+    assert "conexión" in client.get("/api/updates?force=true").json()["error"]
+
+
+def test_manifest_from_release_script_is_installable(monkeypatch, tmp_path):
+    """
+    Verifica que el latest.json que genera scripts/update_manifest.py en el workflow
+    lo lea la app y sirva para descargar y verificar la versión nueva.
+    """
+    from letha.services import updates as updates_service
+
+    release_dir = tmp_path / "release"
+    release_dir.mkdir()
+    installer_name = "install.ps1" if sys.platform == "win32" else "install.sh"
+    files = [release_dir / "letha-9.9.9-py3-none-any.whl", release_dir / installer_name]
+    for f in files:
+        f.write_bytes(f"contenido de {f.name}".encode())
+    notes = tmp_path / "changes.txt"
+    notes.write_text("Primer cambio\n\nSegundo cambio\n", encoding="utf-8")
+    manifest = tmp_path / "latest.json"
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "update_manifest.py"
+    subprocess.run(
+        [
+            sys.executable, str(script),
+            "--version", "9.9.9",
+            "--base-url", release_dir.as_uri(),
+            "--release-url", "https://github.com/JUrielC/letha/releases/tag/v9.9.9",
+            "--notes-file", str(notes),
+            "--output", str(manifest),
+            *map(str, files),
+        ],
+        check=True,
+    )
+
+    monkeypatch.setattr(updates_service, "MANIFEST_URL", manifest.as_uri())
+    release = updates_service.fetch_latest_release()
+    assert release["version"] == "9.9.9"
+    assert release["notes"] == ["Primer cambio", "Segundo cambio"]
+    assert set(release["assets"]) == {f.name for f in files}
+
+    launched = []
+    monkeypatch.setattr(updates_service, "self_update_unavailable_reason", lambda: None)
+    monkeypatch.setattr(updates_service, "_launch_detached", lambda script, log: launched.append(script))
+    monkeypatch.setattr(updates_service, "_schedule_exit", lambda: None)
+    database.init_db()
+    assert updates_service.start_update() == {"version": "9.9.9"}
+    assert len(launched) == 1
+
+
+def test_invalid_manifest_is_reported_as_check_error(monkeypatch, tmp_path):
+    from letha.services import updates as updates_service
+
+    manifest = tmp_path / "latest.json"
+    manifest.write_text('{"sin": "versión"}', encoding="utf-8")
+    monkeypatch.setattr(updates_service, "MANIFEST_URL", manifest.as_uri())
+    database.init_db()
+    info = TestClient(api.app).get("/api/updates?force=true").json()
+    assert info["update_available"] is False
+    assert info["error"]
+
+
+def test_updated_notice_is_shown_until_acknowledged(monkeypatch):
+    from letha import __version__
+    from letha.services import updates as updates_service
+
+    monkeypatch.setattr(updates_service, "fetch_latest_release", lambda: fake_release(__version__))
+    database.init_db()
+    client = TestClient(api.app)
+
+    assert client.get("/api/updates").json()["updated_from"] is None
+    database.set_setting("last_seen_version", "0.0.1")
+    info = client.get("/api/updates").json()
+    assert info["updated_from"] == "0.0.1"
+    assert info["update_available"] is False
+
+    client.post("/api/updates/acknowledge")
+    assert client.get("/api/updates").json()["updated_from"] is None
+
+
+def test_install_update_refused_outside_installed_app():
+    database.init_db()
+    res = TestClient(api.app).post("/api/updates/install")
+    assert res.status_code == 409
+    assert "git pull" in res.json()["detail"]
+
+
+def test_install_update_verifies_downloads_and_launches_updater(monkeypatch, tmp_path):
+    from letha.services import updates as updates_service
+
+    installer_name = "install.ps1" if sys.platform == "win32" else "install.sh"
+    sources = {"letha-9.9.9-py3-none-any.whl": b"wheel", installer_name: b"installer"}
+    assets = {}
+    for name, content in sources.items():
+        (tmp_path / name).write_bytes(content)
+        assets[name] = {"url": (tmp_path / name).as_uri(), "sha256": hashlib.sha256(content).hexdigest()}
+
+    launched, exits = [], []
+    monkeypatch.setattr(updates_service, "self_update_unavailable_reason", lambda: None)
+    monkeypatch.setattr(updates_service, "fetch_latest_release", lambda: fake_release(assets=assets))
+    monkeypatch.setattr(updates_service, "_launch_detached", lambda script, log: launched.append(script))
+    monkeypatch.setattr(updates_service, "_schedule_exit", lambda: exits.append(1))
+    database.init_db()
+    client = TestClient(api.app)
+
+    res = client.post("/api/updates/install")
+    assert res.status_code == 200
+    assert res.json() == {"version": "9.9.9"}
+    downloaded = config.CACHE_DIR / "updates" / "9.9.9"
+    assert (downloaded / "letha-9.9.9-py3-none-any.whl").read_bytes() == b"wheel"
+    assert str(downloaded / "letha-9.9.9-py3-none-any.whl") in launched[0].read_text()
+    assert exits == [1]
+
+    assets[installer_name]["sha256"] = "0" * 64
+    res_tampered = client.post("/api/updates/install")
+    assert res_tampered.status_code == 409
+    assert "huella" in res_tampered.json()["detail"]
+    assert len(launched) == 1
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="El actualizador de macOS es un script de shell")
+def test_updater_script_waits_for_the_app_and_runs_installer(tmp_path):
+    from letha.services import updates as updates_service
+
+    marker = tmp_path / "instalado.txt"
+    installer = tmp_path / "install.sh"
+    installer.write_text(f'echo "$LETHA_WHEEL" > {shlex.quote(str(marker))}\n')
+    wheel = tmp_path / "letha-9.9.9-py3-none-any.whl"
+    wheel.write_bytes(b"wheel")
+    # Proceso huérfano para que, al terminar, no quede como zombi (kill -0 seguiría respondiendo)
+    app_pid = int(subprocess.check_output(["/bin/sh", "-c", "sleep 1.5 >/dev/null 2>&1 & echo $!"]))
+
+    script = updates_service.write_updater_script(tmp_path, wheel, installer, [app_pid])
+    started = time.monotonic()
+    subprocess.run(["/bin/sh", str(script)], check=True, timeout=30)
+    assert time.monotonic() - started >= 1.0
+    assert marker.read_text().strip() == str(wheel)
 
 
 def test_edge_tts_default_rate_is_85_percent():

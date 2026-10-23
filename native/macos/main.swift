@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 import WebKit
 
 private let readyPrefix = "LETHA_APP_READY "
+// El servidor sale con este código al actualizarse (UPDATE_EXIT_CODE en updates.py); el actualizador reabre la app
+private let updateExitCode: Int32 = 75
 
 private let brandHTML = #"<div class="brand"><div class="logo"><svg viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></svg></div>Letha</div>"#
 
@@ -192,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func serverDidExit(_ p: Process) {
         if terminating || !ownsServer { return }
+        if p.terminationStatus == updateExitCode {
+            NSApp.terminate(nil)
+            return
+        }
         log("El servidor terminó inesperadamente (código \(p.terminationStatus))")
         showError("El servidor de Letha se detuvo inesperadamente.\nRevisa el log en ~/Library/Logs/letha.log.")
     }
