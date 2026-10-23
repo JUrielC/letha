@@ -162,12 +162,12 @@ export const pt: Messages = {
     speed: "Velocidade da voz",
     speedHint:
       "A velocidade com que o áudio é gerado. Diferente do controle 1.0× do leitor, mantém a entonação natural sem distorção.",
-    speedRecommended: "Recomendado: 85%.",
+    speedRecommended: "Recomendado: 90%.",
     speedSlider: "Velocidade da voz em porcentagem",
     slow: "Lento",
     recommended: "Recomendado",
     presets: "Velocidades frequentes",
-    reset: "Restaurar para 85%",
+    reset: "Restaurar para 90%",
     trySpeed: "Testar velocidade",
     appearance: "Aparência",
     appearanceHint:

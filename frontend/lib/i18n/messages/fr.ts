@@ -163,12 +163,12 @@ export const fr: Messages = {
     speed: "Vitesse de la voix",
     speedHint:
       "La vitesse à laquelle l’audio est généré. Contrairement à la commande 1.0× du lecteur, elle conserve l’intonation naturelle sans distorsion.",
-    speedRecommended: "Recommandé : 85 %.",
+    speedRecommended: "Recommandé : 90 %.",
     speedSlider: "Vitesse de la voix en pourcentage",
     slow: "Lent",
     recommended: "Recommandé",
     presets: "Vitesses courantes",
-    reset: "Revenir à 85 %",
+    reset: "Revenir à 90 %",
     trySpeed: "Tester la vitesse",
     appearance: "Apparence",
     appearanceHint:

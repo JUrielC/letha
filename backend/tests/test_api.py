@@ -399,9 +399,9 @@ def test_upload_read_voice_switch_and_legacy_audio_cleanup():
         for i, s in enumerate(chap0_initial["sentences"])
     ]
 
-    # Simular un audio cacheado a velocidad base (0.85) para Dalia y comprobar cambio de voz
-    dalia_audio = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.85.mp3"
-    dalia_align = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.85.json"
+    # Simular un audio cacheado a velocidad base (0.90) para Dalia y comprobar cambio de voz
+    dalia_audio = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.90.mp3"
+    dalia_align = config.AUDIO_DIR / f"{book_id}_c0_es-MX-DaliaNeural_0.90.json"
     dalia_audio.write_bytes(b"fake-mp3")
     dalia_align.write_text(
         json.dumps(aligned_mock),
@@ -651,8 +651,8 @@ def test_existing_books_get_paragraphs_from_their_pdf():
             )
         conn.execute("DELETE FROM app_settings WHERE key = 'paragraphs_extracted'")
 
-    stale_audio = config.AUDIO_DIR / f"{book_id}_c0_en-US-AvaNeural_0.85.mp3"
-    kept_audio = config.AUDIO_DIR / f"{book_id}_c1_en-US-AvaNeural_0.85.mp3"
+    stale_audio = config.AUDIO_DIR / f"{book_id}_c0_en-US-AvaNeural_0.90.mp3"
+    kept_audio = config.AUDIO_DIR / f"{book_id}_c1_en-US-AvaNeural_0.90.mp3"
     stale_audio.write_bytes(b"mp3")
     kept_audio.write_bytes(b"mp3")
     assert client.get(f"/api/books/{book_id}/chapters/0").json()["sentences"][0]["text"] == (
@@ -1167,8 +1167,8 @@ def test_chapter_translations_endpoint(monkeypatch):
     assert client.get(f"/api/books/{book_id}/chapters/0/translations").json()["provider"] == "cache"
 
 
-def test_edge_tts_default_rate_is_85_percent():
-    """Verifica que la velocidad base nativa de edge-tts sea 85% (-15%) por defecto y sea configurable."""
+def test_edge_tts_default_rate_is_90_percent():
+    """Verifica que la velocidad base nativa de edge-tts sea 90% (-10%) por defecto y sea configurable."""
     from letha.services import tts as tts_service
 
     database.init_db()
@@ -1176,30 +1176,30 @@ def test_edge_tts_default_rate_is_85_percent():
 
     res_get = client.get("/api/settings")
     assert res_get.status_code == 200
-    assert res_get.json()["edge_base_speed"] == 0.85
+    assert res_get.json()["edge_base_speed"] == 0.90
     assert res_get.json()["auto_advance_sentence"] is True
     assert res_get.json()["auto_advance_page"] is True
     assert res_get.json()["boundary_type"] == "SentenceBoundary"
-    assert tts_service.EDGE_BASE_SPEED == 0.85
-    assert tts_service.format_rate(1.0) == "-15%"
+    assert tts_service.EDGE_BASE_SPEED == 0.90
+    assert tts_service.format_rate(1.0) == "-10%"
 
-    # Cambiar velocidad nativa a 90% (-10%), modo solo al clickear, sin pasar página y WordBoundary
+    # Cambiar velocidad nativa a 85% (-15%), modo solo al clickear, sin pasar página y WordBoundary
     res_put = client.put(
         "/api/settings",
         json={
-            "edge_base_speed": 0.90,
+            "edge_base_speed": 0.85,
             "auto_advance_sentence": False,
             "auto_advance_page": False,
             "boundary_type": "WordBoundary",
         },
     )
     assert res_put.status_code == 200
-    assert res_put.json()["edge_base_speed"] == 0.90
+    assert res_put.json()["edge_base_speed"] == 0.85
     assert res_put.json()["auto_advance_sentence"] is False
     assert res_put.json()["auto_advance_page"] is False
     assert res_put.json()["boundary_type"] == "WordBoundary"
-    assert tts_service.format_rate(1.0) == "-10%"
-    assert tts_service.AUDIO_CACHE_TAG == "0.90_wb"
+    assert tts_service.format_rate(1.0) == "-15%"
+    assert tts_service.AUDIO_CACHE_TAG == "0.85_wb"
 
     # Verificar alineación de palabras por oración en modo WordBoundary
     aligned = tts_service._align_words_to_sentences(
@@ -1218,16 +1218,16 @@ def test_edge_tts_default_rate_is_85_percent():
     assert len(aligned[1][2]) == 2
     assert aligned[1][2][1]["text"] == "works"
 
-    # Restaurar al 85%, lectura en automático y SentenceBoundary por defecto
+    # Restaurar al 90%, lectura en automático y SentenceBoundary por defecto
     client.put(
         "/api/settings",
         json={
-            "edge_base_speed": 0.85,
+            "edge_base_speed": 0.90,
             "auto_advance_sentence": True,
             "boundary_type": "SentenceBoundary",
         },
     )
-    assert tts_service.format_rate(1.0) == "-15%"
-    assert tts_service.AUDIO_CACHE_TAG == "0.85"
+    assert tts_service.format_rate(1.0) == "-10%"
+    assert tts_service.AUDIO_CACHE_TAG == "0.90"
 
 

@@ -13,7 +13,7 @@ import { errorMessage, errorText, useI18n } from "@/lib/i18n";
 import { announceNativeLanguage, NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { Theme, useTheme } from "@/lib/useTheme";
 
-const DEFAULT_PERCENT = 85;
+const DEFAULT_PERCENT = 90;
 const PRESET_PERCENTS = [75, 80, 85, 90, 95, 100];
 const DEFAULT_VOICE = "es-MX-DaliaNeural";
 
@@ -189,7 +189,7 @@ function SettingsContent() {
     api
       .getAppSettings()
       .then((s) => {
-        setPercent(Math.round((s.edge_base_speed || 0.85) * 100));
+        setPercent(Math.round((s.edge_base_speed || DEFAULT_PERCENT / 100) * 100));
         setAutoAdvance(s.auto_advance_sentence ?? true);
         setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
@@ -637,13 +637,24 @@ function SettingsContent() {
                     className="letha-slider"
                     aria-valuetext={`${percent}%`}
                   />
-                  <div className="relative h-5 text-xs tabular-nums mt-1 select-none" style={{ color: "var(--muted)" }}>
-                    <span className="absolute left-0">50% · {t.settings.slow}</span>
-                    <span className="absolute left-1/2 -translate-x-1/2 font-medium" style={{ color: "var(--ink)" }}>
-                      85% · {t.settings.recommended}
+                  <div
+                    className="relative h-9 text-xs leading-[18px] tabular-nums mt-1 select-none"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    <span className="absolute left-0 flex flex-col">
+                      <span>50%</span>
+                      <span>{t.settings.slow}</span>
                     </span>
-                    <span className="absolute left-[71.4%] -translate-x-1/2">
-                      100% · Edge
+                    <span
+                      className="absolute left-[57.1%] -translate-x-1/2 flex flex-col items-center font-medium"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      <span>{DEFAULT_PERCENT}%</span>
+                      <span>{t.settings.recommended}</span>
+                    </span>
+                    <span className="absolute left-[71.4%] -translate-x-1/2 flex flex-col items-center">
+                      <span>100%</span>
+                      <span>Edge</span>
                     </span>
                     <span className="absolute right-0">120%</span>
                   </div>

@@ -428,7 +428,7 @@ async def synthesize_chapter(
         base_texts = [s.text for s in chapter.sentences if s.text]
         paragraph_starts = [s.paragraph_start for s in chapter.sentences if s.text]
 
-    # Sintetizamos a velocidad base nativa del 85% en edge-tts (-15%); el cambio de velocidad
+    # Sintetizamos a la velocidad base nativa configurada en edge-tts (90% por defecto); el cambio de velocidad
     # adicional elegido por el usuario se aplica mediante playbackRate en el reproductor HTML5.
     base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_{tts_service.AUDIO_CACHE_TAG}"
     audio_path = config.AUDIO_DIR / f"{base_prefix}.mp3"

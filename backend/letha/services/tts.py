@@ -20,8 +20,8 @@ BYTES_PER_SECOND = 6000.0
 MAX_CHUNK_CHARS = 450
 MAX_CONCURRENCY = 8
 DEFAULT_PAGE_PARTS = 5
-# Velocidad base nativa para edge-tts (por defecto 85% de la velocidad estándar = -15%)
-DEFAULT_EDGE_BASE_SPEED = 0.85
+# Velocidad base nativa para edge-tts (por defecto 90% de la velocidad estándar = -10%)
+DEFAULT_EDGE_BASE_SPEED = 0.90
 EDGE_BASE_SPEED = DEFAULT_EDGE_BASE_SPEED
 DEFAULT_BOUNDARY_TYPE = "SentenceBoundary"
 BOUNDARY_TYPE = DEFAULT_BOUNDARY_TYPE
@@ -117,7 +117,7 @@ async def list_available_voices() -> List[Dict[str, str]]:
 def format_rate(speed: float = 1.0) -> str:
     """
     Convierte un factor de velocidad en el porcentaje de prosodia nativo para edge-tts,
-    aplicando la velocidad base del 85% (EDGE_BASE_SPEED = 0.85 -> '-15%' cuando speed=1.0).
+    aplicando la velocidad base (por defecto EDGE_BASE_SPEED = 0.90 -> '-10%' cuando speed=1.0).
     """
     effective_speed = speed * EDGE_BASE_SPEED
     pct = int(round((effective_speed - 1.0) * 100))
