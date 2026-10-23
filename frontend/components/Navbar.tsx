@@ -135,7 +135,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
             <button
               type="button"
               onClick={onOpenUpload}
-              className="glbtn inline-flex items-center gap-2 h-10 px-4 py-0 rounded-full border-0 text-sm font-medium cursor-pointer"
+              className="glbtn glbtn-primary inline-flex items-center gap-2 h-10 px-4 py-0 rounded-full border-0 text-sm font-medium cursor-pointer"
               style={{
                 background: "var(--btn-primary)",
                 boxShadow: "var(--ring-primary)",

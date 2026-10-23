@@ -94,7 +94,7 @@ export function ConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className={`${destructive ? "quiet hover:opacity-90" : "glbtn"} inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer`}
+            className={`${destructive ? "glbtn glbtn-danger" : "glbtn glbtn-primary"} inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer`}
             style={
               destructive
                 ? { background: "var(--danger)", color: "var(--btn-primary-ink)" }

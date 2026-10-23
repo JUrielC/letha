@@ -26,6 +26,7 @@ body.theme-dark {
   --btn-hover: rgba(255, 255, 255, 0.16);
   --btn-primary-hover: rgba(255, 255, 255, 0.98);
   --btn-ghost-hover: rgba(255, 255, 255, 0.16);
+  --btn-danger-hover: #f5b5aa;
   --hover: rgba(255, 255, 255, 0.08);
   --hl: linear-gradient(180deg, rgba(154, 179, 207, 0.14) 0%, rgba(154, 179, 207, 0.25) 100%);
   --hl-ink: #f2f6fa;
@@ -100,6 +101,7 @@ body:not(.theme-dark):not(.theme-sepia) {
   --btn-hover: rgba(255, 255, 255, 0.65);
   --btn-primary-hover: #1e2632;
   --btn-ghost-hover: rgba(255, 255, 255, 0.65);
+  --btn-danger-hover: #9c1d14;
   --hover: rgba(255, 255, 255, 0.45);
   --hl: linear-gradient(180deg, rgba(45, 55, 72, 0.10) 0%, rgba(45, 55, 72, 0.18) 100%);
   --hl-ink: #1a1d20;
@@ -174,6 +176,7 @@ body.theme-sepia {
   --btn-hover: rgba(255, 250, 240, 0.66);
   --btn-primary-hover: #3f3326;
   --btn-ghost-hover: rgba(255, 250, 240, 0.66);
+  --btn-danger-hover: #84231a;
   --hover: rgba(255, 250, 240, 0.45);
   --hl: linear-gradient(180deg, rgba(200, 165, 110, 0.28) 0%, rgba(190, 150, 95, 0.42) 100%);
   --hl-ink: #3a2e20;
@@ -268,13 +271,17 @@ html[data-i18n-pending] body > * {
   transform: scale(0.97);
 }
 
-.glbtn:hover,
-.glbtn-ghost:hover {
+.glbtn:hover:not(:disabled),
+.glbtn-ghost:hover:not(:disabled) {
   background-color: var(--btn-ghost-hover) !important;
 }
 
-.glbtn-primary:hover {
+.glbtn-primary:hover:not(:disabled) {
   background-color: var(--btn-primary-hover) !important;
+}
+
+.glbtn-danger:hover:not(:disabled) {
+  background-color: var(--btn-danger-hover) !important;
 }
 
 .quiet:hover,

@@ -721,7 +721,7 @@ function SettingsContent() {
                     type="button"
                     onClick={handleSample}
                     disabled={sampleState === "loading"}
-                    className="glbtn inline-flex items-center gap-2.5 h-[46px] pr-5 pl-2 rounded-full border-0 text-[15px] font-medium cursor-pointer transition disabled:opacity-60"
+                    className="glbtn glbtn-primary inline-flex items-center gap-2.5 h-[46px] pr-5 pl-2 rounded-full border-0 text-[15px] font-medium cursor-pointer disabled:opacity-60"
                     style={{
                       background: "var(--btn-primary)",
                       boxShadow: "var(--ring-primary)",

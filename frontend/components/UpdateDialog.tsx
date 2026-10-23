@@ -157,7 +157,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
               type="button"
               autoFocus={mode === "updated" || !info.can_self_update}
               onClick={onClose}
-              className={`${mode === "updated" ? "glbtn" : "quiet"} inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer`}
+              className={`${mode === "updated" ? "glbtn glbtn-primary" : "quiet"} inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer`}
               style={
                 mode === "updated"
                   ? { background: "var(--btn-primary)", boxShadow: "var(--ring-primary)", color: "var(--btn-primary-ink)" }
@@ -171,7 +171,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
                 type="button"
                 autoFocus
                 onClick={handleInstall}
-                className="glbtn inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer"
+                className="glbtn glbtn-primary inline-flex items-center h-11 px-5 rounded-full border-0 text-[15px] font-medium cursor-pointer"
                 style={{
                   background: "var(--btn-primary)",
                   boxShadow: "var(--ring-primary)",

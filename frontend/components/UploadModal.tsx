@@ -435,7 +435,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             type="button"
             onClick={handleUpload}
             disabled={!file || loading}
-            className="glbtn inline-flex items-center gap-2 h-11 px-5 pl-4 rounded-full border-0 text-[15px] font-medium cursor-pointer disabled:opacity-40"
+            className="glbtn glbtn-primary inline-flex items-center gap-2 h-11 px-5 pl-4 rounded-full border-0 text-[15px] font-medium cursor-pointer disabled:opacity-40"
             style={{
               background: "var(--btn-primary)",
               boxShadow: "var(--ring-primary)",

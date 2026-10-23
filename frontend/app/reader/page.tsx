@@ -1052,7 +1052,7 @@ function ReaderContent() {
             </p>
             <Link
               href="/"
-              className="glbtn inline-flex items-center h-10 px-5 rounded-full text-xs font-semibold no-underline"
+              className="glbtn glbtn-primary inline-flex items-center h-10 px-5 rounded-full text-xs font-semibold no-underline"
               style={{
                 background: "var(--btn-primary)",
                 color: "var(--btn-primary-ink)",
@@ -1240,7 +1240,7 @@ function ReaderContent() {
               disabled={!audioUrl}
               onClick={togglePlay}
               aria-label={isPlaying ? t.reader.pause : t.reader.play}
-              className="w-[52px] h-[52px] rounded-full border-0 flex items-center justify-center cursor-pointer transition active:scale-95 disabled:opacity-40"
+              className="glbtn glbtn-primary w-[52px] h-[52px] rounded-full border-0 flex items-center justify-center cursor-pointer disabled:opacity-40"
               style={{
                 background: "var(--btn-primary)",
                 boxShadow: "var(--ring-primary)",

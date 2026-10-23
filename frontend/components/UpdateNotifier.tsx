@@ -69,7 +69,7 @@ export function UpdateNotifier() {
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="glbtn shrink-0 inline-flex items-center h-9 px-3.5 rounded-full border-0 text-sm font-medium cursor-pointer"
+          className="glbtn glbtn-primary shrink-0 inline-flex items-center h-9 px-3.5 rounded-full border-0 text-sm font-medium cursor-pointer"
           style={{ background: "var(--btn-primary)", color: "var(--btn-primary-ink)" }}
         >
           {t.updates.seeWhatsNew}
