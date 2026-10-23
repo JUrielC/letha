@@ -381,14 +381,10 @@ def extract_chapters(doc: pymupdf.Document) -> List[Dict[str, Any]]:
         if not p_text:
             continue
 
-        if current_section_title:
-            chap_title = f"Pág. {p_num + 1} — {current_section_title}"
-        else:
-            chap_title = f"Página {p_num + 1}"
-
         raw_chapters.append(
             {
-                "title": chap_title,
+                # Solo la sección del índice: la interfaz antepone el número de página en su idioma
+                "title": current_section_title,
                 "start_page": p_num + 1,
                 "end_page": p_num + 1,
                 "text_content": p_text,

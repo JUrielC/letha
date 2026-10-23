@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "JUrielC/letha"
 
 Write-Host ""
-Write-Host "Instalando Letha para Windows..." -ForegroundColor Yellow
+Write-Host "Installing Letha for Windows..." -ForegroundColor Yellow
 
 # 1. Asegurar que uv esté en el PATH o instalarlo
 $UvPaths = @(
@@ -26,7 +26,7 @@ foreach ($p in $UvPaths) {
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "-> Instalando uv (instalador ultrarrapido de Python)..."
+    Write-Host "-> Installing uv (fast Python installer)..."
     Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     foreach ($p in $UvPaths) {
         if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) {
@@ -36,7 +36,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    throw "No se pudo instalar uv. Verifica tu conexion a internet e intentalo de nuevo."
+    throw "uv could not be installed. Check your internet connection and try again."
 }
 
 # 2. Obtener el wheel de la última release de GitHub
@@ -63,11 +63,11 @@ if ([string]::IsNullOrWhiteSpace($Wheel)) {
     }
 
     if ([string]::IsNullOrWhiteSpace($Wheel)) {
-        throw "No se encontro ninguna version publicada (.whl) en los Releases de $Repo."
+        throw "No published version (.whl) was found in the $Repo releases."
     }
 }
 
-Write-Host "-> Instalando paquete Letha con uv..."
+Write-Host "-> Installing the Letha package with uv..."
 uv tool install --force --python 3.12 "$Wheel"
 
 # 3. Localizar pythonw.exe dentro del entorno de la herramienta para abrir sin consola negra
@@ -77,7 +77,7 @@ if (-not (Test-Path $Pythonw)) {
     $Pythonw = Join-Path $ToolDir "letha\Scripts\python.exe"
 }
 if (-not (Test-Path $Pythonw)) {
-    throw "La instalacion finalizo pero no se encontro el ejecutable de Letha en $ToolDir."
+    throw "The installation finished but the Letha executable was not found in $ToolDir."
 }
 
 # 4. Crear accesos directos en el Menú Inicio y en el Escritorio
@@ -90,17 +90,17 @@ foreach ($ShortcutPath in @($StartMenuShortcut, $DesktopShortcut)) {
     $Shortcut.TargetPath = $Pythonw
     $Shortcut.Arguments = "-m letha.app"
     $Shortcut.WorkingDirectory = $env:USERPROFILE
-    $Shortcut.Description = "Letha - Lector de PDFs y Audiolibro Sincronizado"
+    $Shortcut.Description = "Letha - Synchronized PDF reader and audiobook"
     $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,21"
     $Shortcut.Save()
 }
 
 Write-Host ""
-Write-Host "Listo. Letha se ha instalado correctamente:" -ForegroundColor Green
-Write-Host "  - Acceso directo en tu Escritorio (Letha)"
-Write-Host "  - Acceso directo en tu Menu Inicio (presiona la tecla Windows y escribe 'Letha')"
+Write-Host "Done. Letha was installed successfully:" -ForegroundColor Green
+Write-Host "  - Shortcut on your Desktop (Letha)"
+Write-Host "  - Shortcut in your Start menu (press the Windows key and type 'Letha')"
 Write-Host ""
-Write-Host "Para desinstalar:"
+Write-Host "To uninstall:"
 Write-Host '  uv tool uninstall letha; Remove-Item "$env:USERPROFILE\Desktop\Letha.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Letha.lnk", "$env:USERPROFILE\.cache\letha", "$env:USERPROFILE\.local\share\letha" -Recurse -Force -ErrorAction SilentlyContinue'
 
 if ([string]::IsNullOrWhiteSpace($env:LETHA_NO_LAUNCH)) {

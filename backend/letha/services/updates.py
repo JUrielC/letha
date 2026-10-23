@@ -34,8 +34,22 @@ INSTALL_COMMANDS = {
 }
 
 
+UPDATE_ERRORS = {
+    "not_installer_copy": "This copy wasn't installed with the Letha installer; update it with git pull.",
+    "unsupported_platform": "Updating from the app is only available on macOS and Windows.",
+    "open_from_icon": "Open Letha from its icon to update it from the app.",
+    "check_failed": "Couldn't check for a new version. Check your connection.",
+    "release_incomplete": "The release doesn't include the files needed to update from the app.",
+    "checksum_mismatch": "The download doesn't match the fingerprint published on GitHub; the update was cancelled.",
+    "already_latest": "You already have the latest version.",
+    "download_failed": "Couldn't download the new version. Check your connection.",
+}
+
+
 class UpdateError(Exception):
-    pass
+    def __init__(self, code: str):
+        super().__init__(UPDATE_ERRORS[code])
+        self.code = code
 
 
 def parse_version(version: str) -> tuple:
@@ -60,7 +74,7 @@ def fetch_latest_release(timeout: float = 6.0) -> Optional[Dict[str, Any]]:
             return None
         raise
     if not isinstance(manifest, dict) or not isinstance(manifest.get("version"), str):
-        raise ValueError("El manifiesto de actualizaciones no es válido.")
+        raise ValueError("Invalid update manifest.")
     return {
         "version": manifest["version"],
         "notes": manifest.get("notes", []),
@@ -71,14 +85,14 @@ def fetch_latest_release(timeout: float = 6.0) -> Optional[Dict[str, Any]]:
 
 
 def self_update_unavailable_reason() -> Optional[str]:
-    """None si esta copia puede actualizarse sola; si no, el motivo para mostrarlo al usuario."""
+    """None si esta copia puede actualizarse sola; si no, el código del motivo (ver UPDATE_ERRORS)."""
     prefix = Path(sys.prefix)
     if prefix.name != "letha" or prefix.parent.name != "tools":
-        return "Esta copia no se instaló con el instalador de Letha; actualízala con git pull."
+        return "not_installer_copy"
     if sys.platform not in INSTALL_COMMANDS:
-        return "La actualización desde la app solo está disponible en macOS y Windows."
+        return "unsupported_platform"
     if sys.platform == "darwin" and os.environ.get("LETHA_NATIVE") != "1":
-        return "Abre Letha desde su icono para poder actualizarla desde la app."
+        return "open_from_icon"
     return None
 
 
@@ -106,7 +120,7 @@ def check_for_updates(force: bool = False) -> Dict[str, Any]:
         try:
             cached = {"checked_at": time.time(), "release": fetch_latest_release()}
         except (OSError, ValueError):
-            info["error"] = "No se pudo consultar si hay una versión nueva. Revisa tu conexión."
+            info["error"] = "check_failed"
             return info
         database.set_setting("update_check", json.dumps(cached))
 
@@ -136,11 +150,11 @@ def acknowledge_update() -> None:
 
 def _download_verified(asset: Optional[Dict[str, Any]], dest: Path) -> Path:
     if not asset or not asset.get("sha256"):
-        raise UpdateError("El release no incluye los archivos necesarios para actualizar desde la app.")
+        raise UpdateError("release_incomplete")
     with urllib.request.urlopen(_request(asset["url"]), timeout=120) as response:
         data = response.read()
     if hashlib.sha256(data).hexdigest() != asset["sha256"]:
-        raise UpdateError("La descarga no coincide con la huella publicada en GitHub; se canceló la actualización.")
+        raise UpdateError("checksum_mismatch")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     return dest
@@ -220,9 +234,9 @@ def start_update() -> Dict[str, Any]:
     try:
         release = fetch_latest_release()
     except (OSError, ValueError):
-        raise UpdateError("No se pudo consultar la versión nueva. Revisa tu conexión.")
+        raise UpdateError("check_failed")
     if not release or not is_newer(release["version"], __version__):
-        raise UpdateError("Ya tienes la última versión.")
+        raise UpdateError("already_latest")
 
     directory = config.CACHE_DIR / "updates" / release["version"]
     wheel_name = f"letha-{release['version']}-py3-none-any.whl"
@@ -231,7 +245,7 @@ def start_update() -> Dict[str, Any]:
         wheel = _download_verified(release["assets"].get(wheel_name), directory / wheel_name)
         installer = _download_verified(release["assets"].get(installer_name), directory / installer_name)
     except OSError:
-        raise UpdateError("No se pudo descargar la versión nueva. Revisa tu conexión.")
+        raise UpdateError("download_failed")
 
     # En macOS el proceso padre es la ventana nativa, que también debe cerrarse antes de reinstalar
     pids = [os.getpid()] + ([os.getppid()] if sys.platform == "darwin" else [])

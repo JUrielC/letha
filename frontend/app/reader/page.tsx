@@ -26,25 +26,22 @@ import {
   WordTiming,
   getBaseUrl,
 } from "@/lib/api";
+import { errorMessage, languageName, useI18n } from "@/lib/i18n";
 import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { Theme, useTheme } from "@/lib/useTheme";
+import { personaName, voiceLabel } from "@/lib/voices";
 
 type FontSize = "sm" | "base" | "lg" | "xl";
 
 const TOTAL_PARTS = 5;
 
-const FONT_LABELS: Record<FontSize, string> = {
-  sm: "Pequeño (18 px)",
-  base: "Mediano (20 px)",
-  lg: "Grande (22 px)",
-  xl: "Muy grande (25 px)",
-};
+const FONT_PX: Record<FontSize, number> = { sm: 18, base: 20, lg: 22, xl: 25 };
 
 const FONT_STYLES: Record<FontSize, React.CSSProperties> = {
-  sm: { fontSize: "18px", lineHeight: 1.7 },
-  base: { fontSize: "20px", lineHeight: 1.74 },
-  lg: { fontSize: "22px", lineHeight: 1.74 },
-  xl: { fontSize: "25px", lineHeight: 1.72 },
+  sm: { fontSize: FONT_PX.sm, lineHeight: 1.7 },
+  base: { fontSize: FONT_PX.base, lineHeight: 1.74 },
+  lg: { fontSize: FONT_PX.lg, lineHeight: 1.74 },
+  xl: { fontSize: FONT_PX.xl, lineHeight: 1.72 },
 };
 
 function formatTime(sec: number) {
@@ -52,17 +49,6 @@ function formatTime(sec: number) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function extractPersona(friendlyName?: string, shortName?: string): string {
-  if (friendlyName) {
-    const parts = friendlyName.split(/\s*[-—]\s*/);
-    if (parts[0]) return parts[0].trim();
-  }
-  if (!shortName) return "Narrador";
-  const parts = shortName.split("-");
-  const last = parts[parts.length - 1] || "";
-  return last.replace("Neural", "");
 }
 
 function groupParagraphs(sentences: SentenceItem[]): number[][] {
@@ -95,6 +81,7 @@ function ReaderContent() {
   const [duration, setDuration] = useState(0);
 
   const { theme, setTheme } = useTheme();
+  const { t, locale } = useI18n();
   const [fontSize, setFontSize] = useState<FontSize>("base");
   const [isAaOpen, setIsAaOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
@@ -105,7 +92,6 @@ function ReaderContent() {
   );
   const [activeWordKey, setActiveWordKey] = useState<string | null>(null);
   const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
-  const [languageNames, setLanguageNames] = useState<Record<string, string>>({});
   const [translations, setTranslations] = useState<Record<number, (string | null)[]>>({});
   const [translationFailed, setTranslationFailed] = useState<Record<number, boolean>>({});
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
@@ -146,10 +132,6 @@ function ReaderContent() {
         setNativeLanguage(s.native_language ?? null);
       })
       .catch(console.error);
-    api
-      .getTranslationLanguages()
-      .then((list) => setLanguageNames(Object.fromEntries(list.map((l) => [l.code, l.name]))))
-      .catch(() => {});
 
     const onNativeLanguage = (e: Event) => {
       setNativeLanguage((e as CustomEvent<string>).detail);
@@ -219,9 +201,7 @@ function ReaderContent() {
         if (ignore) return;
         setBook(b);
         if (b.total_chapters === 0) {
-          setLoadError(
-            "Este documento no contiene texto extraíble (parece ser un PDF escaneado)."
-          );
+          setLoadError(t.errors.pdf_without_text);
           return;
         }
         const targetChapter = b.current_chapter_idx ?? 0;
@@ -235,7 +215,7 @@ function ReaderContent() {
       })
       .catch((err: any) => {
         if (ignore) return;
-        setLoadError(err.message || "No se pudo cargar el libro.");
+        setLoadError(errorMessage(err, t, t.reader.loadFailed));
       });
 
     return () => {
@@ -599,7 +579,7 @@ function ReaderContent() {
               className={`word-item cursor-pointer transition ${
                 isWordSelected ? "word-active" : ""
               }`}
-              title={`Escuchar "${wordTiming.text}" (${wordTiming.start.toFixed(2)}s)`}
+              title={t.reader.listenToWord(wordTiming.text, wordTiming.start.toFixed(2))}
             >
               {part}
             </span>
@@ -706,8 +686,7 @@ function ReaderContent() {
     } catch {}
   };
 
-  const matchedVoice = voices.find((v) => v.short_name === selectedVoice);
-  const personaName = extractPersona(matchedVoice?.friendly_name, selectedVoice || undefined);
+  const narrator = personaName(selectedVoice, voices, t);
 
   const bookProgressPct =
     book && book.total_chapters > 0 && currentChapterIdx !== null
@@ -731,12 +710,12 @@ function ReaderContent() {
   if (!chapterTranslations) {
     translationMessage =
       currentChapterIdx !== null && translationFailed[currentChapterIdx]
-        ? "No se pudo traducir esta página. Revisa tu conexión."
-        : "Traduciendo…";
+        ? t.reader.pageTranslationFailed
+        : t.reader.translating;
   } else if (activeSentenceIdx < 0) {
-    translationMessage = "Toca una oración o pulsa reproducir para ver su traducción.";
+    translationMessage = t.reader.tapSentence;
   } else if (!activeTranslation) {
-    translationMessage = "No se pudo traducir esta oración. Revisa tu conexión.";
+    translationMessage = t.reader.sentenceTranslationFailed;
   }
 
   return (
@@ -815,7 +794,7 @@ function ReaderContent() {
                 style={{ color: "var(--muted)" }}
               >
                 <ChevronLeft className="w-[18px] h-[18px]" strokeWidth={1.6} />
-                <span>Biblioteca</span>
+                <span>{t.nav.library}</span>
               </Link>
               <button
                 type="button"
@@ -831,17 +810,16 @@ function ReaderContent() {
                 }}
               >
                 <List className="w-[18px] h-[18px]" strokeWidth={1.6} />
-                <span>Índice</span>
+                <span>{t.reader.contents}</span>
               </button>
             </div>
 
             <div className="flex-initial min-w-0 text-center px-2">
               <p className="m-0 text-sm font-medium truncate max-w-sm" style={{ color: "var(--ink)" }}>
-                {book?.title || "Cargando..."}
+                {book?.title || t.common.loading}
               </p>
               <p className="m-0 text-xs tabular-nums truncate" style={{ color: "var(--muted)" }}>
-                Pág. {currentChapterIdx !== null ? currentChapterIdx + 1 : 1} de{" "}
-                {book?.total_chapters || 1}
+                {t.common.pageOf(currentChapterIdx !== null ? currentChapterIdx + 1 : 1, book?.total_chapters || 1)}
                 {chapter?.title ? ` · ${chapter.title}` : ""}
               </p>
             </div>
@@ -852,8 +830,8 @@ function ReaderContent() {
                   type="button"
                   onClick={toggleTranslation}
                   aria-pressed={showTranslation}
-                  aria-label={showTranslation ? "Ocultar traducción" : "Mostrar traducción"}
-                  title={showTranslation ? "Ocultar traducción" : "Mostrar traducción"}
+                  aria-label={showTranslation ? t.reader.hideTranslation : t.reader.showTranslation}
+                  title={showTranslation ? t.reader.hideTranslation : t.reader.showTranslation}
                   className="quiet inline-flex items-center justify-center w-10 h-10 rounded-full border-0 cursor-pointer"
                   style={{
                     background: showTranslation ? "var(--hover)" : "transparent",
@@ -871,7 +849,7 @@ function ReaderContent() {
                   setIsTocOpen(false);
                 }}
                 aria-expanded={isAaOpen}
-                aria-label="Apariencia del texto"
+                aria-label={t.reader.textAppearance}
                 className="quiet inline-flex items-center justify-center h-10 min-w-[48px] px-3 rounded-full border-0 font-serif text-[17px] cursor-pointer"
                 style={{
                   background: isAaOpen ? "var(--hover)" : "transparent",
@@ -883,7 +861,7 @@ function ReaderContent() {
 
               <Link
                 href={`/settings?bookId=${bookId}`}
-                aria-label="Configuración"
+                aria-label={t.nav.settings}
                 className="quiet inline-flex items-center justify-center w-10 h-10 rounded-full no-underline"
                 style={{ color: "var(--muted)" }}
               >
@@ -894,7 +872,7 @@ function ReaderContent() {
 
           <div
             role="progressbar"
-            aria-label="Progreso en el libro"
+            aria-label={t.reader.bookProgress}
             aria-valuenow={bookProgressPct}
             aria-valuemin={0}
             aria-valuemax={100}
@@ -914,7 +892,7 @@ function ReaderContent() {
         <div
           ref={aaRef}
           role="dialog"
-          aria-label="Apariencia del texto"
+          aria-label={t.reader.textAppearance}
           className="glass-strong fixed z-40 top-20 right-8 w-80 max-w-[calc(100%-48px)] p-[18px] rounded-[24px] box-border flex flex-col gap-4"
           style={{
             background: "var(--glass-menu)",
@@ -923,43 +901,43 @@ function ReaderContent() {
         >
           <div>
             <p className="m-0 mb-2.5 text-[13px] font-medium" style={{ color: "var(--muted)" }}>
-              Tema
+              {t.nav.theme}
             </p>
             <div className="grid grid-cols-3 gap-2">
               {[
                 {
                   id: "light" as Theme,
-                  label: "Claro",
+                  label: t.themes.light,
                   bg: "radial-gradient(60px 50px at 20% 20%, rgba(195, 205, 218, 0.6), rgba(195, 205, 218, 0)), radial-gradient(60px 50px at 90% 80%, rgba(165, 178, 192, 0.4), rgba(165, 178, 192, 0)), #f7f8fa",
                   ink: "#1a1d20",
                 },
                 {
                   id: "sepia" as Theme,
-                  label: "Sepia",
+                  label: t.themes.sepia,
                   bg: "radial-gradient(60px 50px at 20% 20%, rgba(214, 185, 150, 0.6), rgba(214, 185, 150, 0)), radial-gradient(60px 50px at 90% 80%, rgba(175, 155, 130, 0.35), rgba(175, 155, 130, 0)), #f4eee4",
                   ink: "#3a2e20",
                 },
                 {
                   id: "dark" as Theme,
-                  label: "Oscuro",
+                  label: t.themes.dark,
                   bg: "radial-gradient(60px 50px at 20% 20%, rgba(154, 179, 207, 0.25), rgba(154, 179, 207, 0)), radial-gradient(60px 50px at 90% 80%, rgba(65, 76, 92, 0.45), rgba(65, 76, 92, 0)), #101216",
                   ink: "#e6e9ed",
                 },
-              ].map((t) => {
-                const isActive = theme === t.id;
+              ].map((option) => {
+                const isActive = theme === option.id;
                 return (
                   <button
-                    key={t.id}
+                    key={option.id}
                     type="button"
-                    onClick={() => setTheme(t.id)}
+                    onClick={() => setTheme(option.id)}
                     aria-pressed={isActive}
                     className="p-0 border-0 bg-transparent cursor-pointer flex flex-col gap-1.5 items-stretch"
                   >
                     <span
                       className="h-14 rounded-2xl flex items-center justify-center font-serif text-xl"
                       style={{
-                        background: t.bg,
-                        color: t.ink,
+                        background: option.bg,
+                        color: option.ink,
                         boxShadow: isActive
                           ? "inset 0 0 0 1.5px var(--accent-border)"
                           : "inset 0 0 0 1px var(--track)",
@@ -968,7 +946,7 @@ function ReaderContent() {
                       Aa
                     </span>
                     <span className="text-[13px] text-center" style={{ color: "var(--ink)" }}>
-                      {t.label}
+                      {option.label}
                     </span>
                   </button>
                 );
@@ -978,7 +956,7 @@ function ReaderContent() {
 
           <div>
             <p className="m-0 mb-2.5 text-[13px] font-medium" style={{ color: "var(--muted)" }}>
-              Tamaño del texto
+              {t.settings.textSize}
             </p>
             <div
               className="flex items-center gap-2 p-1 rounded-full"
@@ -987,19 +965,19 @@ function ReaderContent() {
               <button
                 type="button"
                 onClick={() => stepFontSize(-1)}
-                aria-label="Texto más pequeño"
+                aria-label={t.reader.smallerText}
                 className="quiet w-11 h-9 rounded-full border-0 font-serif text-sm cursor-pointer"
                 style={{ color: "var(--ink)" }}
               >
                 A−
               </button>
               <span className="flex-1 text-center text-[13px] font-medium tabular-nums" style={{ color: "var(--ink)" }}>
-                {FONT_LABELS[fontSize]}
+                {t.fontSizes[fontSize]} ({FONT_PX[fontSize]} px)
               </span>
               <button
                 type="button"
                 onClick={() => stepFontSize(1)}
-                aria-label="Texto más grande"
+                aria-label={t.reader.largerText}
                 className="quiet w-11 h-9 rounded-full border-0 font-serif text-lg cursor-pointer"
                 style={{ color: "var(--ink)" }}
               >
@@ -1014,7 +992,7 @@ function ReaderContent() {
             className="text-[13px] underline underline-offset-4 decoration-[var(--dash)] hover:opacity-80 pt-1"
             style={{ color: "var(--accent)" }}
           >
-            Modo de lectura y velocidad en Configuración
+            {t.reader.modeAndSpeed}
           </Link>
         </div>
       )}
@@ -1023,7 +1001,7 @@ function ReaderContent() {
       {isTocOpen && (
         <nav
           ref={tocRef}
-          aria-label="Índice del libro"
+          aria-label={t.reader.contentsLabel}
           className="glass-strong fixed z-40 top-20 left-8 w-[340px] max-w-[calc(100%-48px)] p-2.5 rounded-[24px] box-border max-h-[75vh] flex flex-col shadow-2xl"
           style={{
             background: "var(--glass-menu)",
@@ -1032,10 +1010,10 @@ function ReaderContent() {
         >
           <div className="flex items-center justify-between p-2 pb-2.5">
             <h2 className="m-0 text-[15px] font-semibold" style={{ color: "var(--ink)" }}>
-              Índice
+              {t.reader.contents}
             </h2>
             <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
-              {book?.total_chapters || 0} págs.
+              {t.common.pageCount(book?.total_chapters || 0)}
             </span>
           </div>
 
@@ -1058,7 +1036,9 @@ function ReaderContent() {
                     fontWeight: isCurrent ? 600 : 400,
                   }}
                 >
-                  <span className="flex-1 truncate">{c.title}</span>
+                  <span className="flex-1 truncate">
+                    {c.title ? t.reader.pageWithSection(c.start_page, c.title) : t.reader.page(c.start_page)}
+                  </span>
                   {c.has_audio && (
                     <Headphones className="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
                   )}
@@ -1085,13 +1065,13 @@ function ReaderContent() {
                 boxShadow: "var(--ring-primary)",
               }}
             >
-              Volver a la biblioteca
+              {t.common.backToLibrary}
             </Link>
           </div>
         ) : !chapter ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3" style={{ color: "var(--muted)" }}>
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--accent)" }} />
-            <span className="text-sm">Cargando capítulo...</span>
+            <span className="text-sm">{t.reader.loadingPage}</span>
           </div>
         ) : (
           <div
@@ -1107,11 +1087,13 @@ function ReaderContent() {
               style={FONT_STYLES[fontSize]}
             >
               <header className="mb-9 pb-4">
-                <p className="m-0 font-sans text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>
-                  Páginas {chapter.start_page} – {chapter.end_page}
-                </p>
-                <h1 className="m-0 mt-1.5 font-serif text-[38px] leading-[1.15] font-normal tracking-[-0.012em]" style={{ color: "var(--ink)" }}>
-                  {chapter.title}
+                {chapter.title && (
+                  <p className="m-0 mb-1.5 font-sans text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>
+                    {t.reader.pageRange(chapter.start_page, chapter.end_page)}
+                  </p>
+                )}
+                <h1 className="m-0 font-serif text-[38px] leading-[1.15] font-normal tracking-[-0.012em]" style={{ color: "var(--ink)" }}>
+                  {chapter.title || t.reader.pageRange(chapter.start_page, chapter.end_page)}
                 </h1>
               </header>
 
@@ -1140,9 +1122,9 @@ function ReaderContent() {
                           title={
                             isVoiceReady
                               ? boundaryType === "WordBoundary"
-                                ? "Haz clic en una palabra para escucharla o en la frase"
-                                : `Escuchar desde ${(s.start as number).toFixed(1)}s`
-                              : "Cargando voz para este fragmento..."
+                                ? t.reader.wordHint
+                                : t.reader.listenFrom((s.start as number).toFixed(1))
+                              : t.reader.voiceLoading
                           }
                         >
                           {renderSentenceContent(s, idx)}
@@ -1169,7 +1151,7 @@ function ReaderContent() {
             }}
           >
             <p className="m-0 mb-1 text-[12px] font-medium" style={{ color: "var(--muted)" }}>
-              Traducción · {languageNames[nativeLanguage as string] ?? nativeLanguage}
+              {t.reader.translation(languageName(nativeLanguage as string, locale))}
             </p>
             {translationMessage ? (
               <p className="m-0 text-sm" style={{ color: "var(--muted)" }}>
@@ -1202,17 +1184,17 @@ function ReaderContent() {
                 className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-[13px]"
                 style={{ background: "var(--hl)", color: "var(--accent)" }}
               >
-                {personaName.charAt(0).toUpperCase()}
+                {narrator.charAt(0).toUpperCase()}
               </span>
               <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-                {personaName}
+                {narrator}
               </span>
               <ChevronDown className="w-3.5 h-3.5 opacity-60" style={{ color: "var(--ink)" }} />
             </div>
             <select
               value={selectedVoice || "es-MX-DaliaNeural"}
               onChange={(e) => handleVoiceChange(e.target.value)}
-              aria-label={`Narrador: ${personaName}. Cambiar narrador`}
+              aria-label={t.reader.narratorLabel(narrator)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >
               {bookVoices.map((v) => (
@@ -1221,7 +1203,7 @@ function ReaderContent() {
                   value={v.short_name}
                   className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                 >
-                  {v.friendly_name}
+                  {voiceLabel(v, locale, t)}
                 </option>
               ))}
             </select>
@@ -1238,7 +1220,7 @@ function ReaderContent() {
                   setCurrentChapterIdx(currentChapterIdx - 1);
                 }
               }}
-              aria-label="Página anterior"
+              aria-label={t.reader.previousPage}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
               style={{ color: "var(--ink)" }}
             >
@@ -1249,7 +1231,7 @@ function ReaderContent() {
               type="button"
               disabled={!audioUrl}
               onClick={() => seekRelative(-10)}
-              aria-label="Retroceder 10 segundos"
+              aria-label={t.reader.back10}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition relative"
               style={{ color: "var(--ink)" }}
             >
@@ -1263,7 +1245,7 @@ function ReaderContent() {
               type="button"
               disabled={!audioUrl}
               onClick={togglePlay}
-              aria-label={isPlaying ? "Pausar" : "Reproducir"}
+              aria-label={isPlaying ? t.reader.pause : t.reader.play}
               className="w-[52px] h-[52px] rounded-full border-0 flex items-center justify-center cursor-pointer transition active:scale-95 disabled:opacity-40"
               style={{
                 background: "var(--btn-primary)",
@@ -1282,7 +1264,7 @@ function ReaderContent() {
               type="button"
               disabled={!audioUrl}
               onClick={() => seekRelative(10)}
-              aria-label="Adelantar 10 segundos"
+              aria-label={t.reader.forward10}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition relative"
               style={{ color: "var(--ink)" }}
             >
@@ -1305,7 +1287,7 @@ function ReaderContent() {
                   setCurrentChapterIdx(currentChapterIdx + 1);
                 }
               }}
-              aria-label="Siguiente página"
+              aria-label={t.reader.nextPage}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
               style={{ color: "var(--ink)" }}
             >
@@ -1318,9 +1300,7 @@ function ReaderContent() {
             {!audioUrl && isSynthesizing ? (
               <div className="flex items-center justify-center gap-2 py-1 text-xs font-medium" style={{ color: "var(--muted)" }}>
                 <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--muted)" }} />
-                <span>
-                  Cargando voz del fragmento {Math.max(1, loadedParts)} de {TOTAL_PARTS}...
-                </span>
+                <span>{t.reader.loadingVoicePart(Math.max(1, loadedParts), TOTAL_PARTS)}</span>
               </div>
             ) : (
               <>
@@ -1371,7 +1351,7 @@ function ReaderContent() {
                       setCurrentTime(val);
                       if (audioRef.current) audioRef.current.currentTime = val;
                     }}
-                    aria-label="Posición de reproducción"
+                    aria-label={t.reader.position}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed m-0 p-0"
                   />
                 </div>
@@ -1383,8 +1363,8 @@ function ReaderContent() {
                   <span>{formatTime(currentTime)}</span>
                   <span>
                     {isSynthesizing && loadedParts < TOTAL_PARTS
-                      ? `Preparando la voz · parte ${Math.max(1, loadedParts)} de ${TOTAL_PARTS}`
-                      : "Voz lista"}
+                      ? t.reader.preparingVoice(Math.max(1, loadedParts), TOTAL_PARTS)
+                      : t.reader.voiceReady}
                   </span>
                   <span>{formatTime(duration)}</span>
                 </div>
@@ -1406,7 +1386,7 @@ function ReaderContent() {
             <select
               value={playbackSpeed}
               onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-              aria-label={`Velocidad de reproducción ${playbackSpeed}×`}
+              aria-label={t.reader.playbackSpeed(playbackSpeed)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >
               <option value={0.75} className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">0.75×</option>
@@ -1424,6 +1404,7 @@ function ReaderContent() {
 }
 
 export default function ReaderPage() {
+  const { t } = useI18n();
   return (
     <Suspense
       fallback={
@@ -1433,7 +1414,7 @@ export default function ReaderPage() {
         >
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--accent)" }} />
           <span className="text-sm" style={{ color: "var(--muted)" }}>
-            Cargando lector...
+            {t.reader.loading}
           </span>
         </div>
       }

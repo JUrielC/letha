@@ -8,6 +8,7 @@ import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, TranslationLanguage, UpdateInfo } from "@/lib/api";
+import { errorMessage, errorText, useI18n } from "@/lib/i18n";
 import { announceNativeLanguage, NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { Theme, useTheme } from "@/lib/useTheme";
 
@@ -44,6 +45,7 @@ function OptionGrid<T extends string | boolean>({
   onChange: (v: T) => void;
   children?: React.ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <section aria-labelledby={name} className="flex flex-wrap gap-5 lg:gap-14 py-8">
       <div className="flex-1 min-w-[280px] max-w-[380px]">
@@ -111,7 +113,7 @@ function OptionGrid<T extends string | boolean>({
                   <span className="text-[15px] font-medium">{opt.title}</span>
                   {opt.isDefault && (
                     <span className="text-xs" style={{ color: "var(--muted)" }}>
-                      Por defecto
+                      {t.common.default}
                     </span>
                   )}
                 </span>
@@ -167,6 +169,7 @@ function SettingsContent() {
   const [languages, setLanguages] = useState<TranslationLanguage[]>([]);
 
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const [fontSize, setFontSize] = useState<FontSize>("base");
 
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -191,7 +194,7 @@ function SettingsContent() {
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
-        setError("No se pudo cargar la configuración actual.");
+        setError(t.settings.loadFailed);
       })
       .finally(() => setLoading(false));
 
@@ -235,7 +238,7 @@ function SettingsContent() {
         setSavedNotice(true);
         setTimeout(() => setSavedNotice(false), 2000);
       } catch (err: any) {
-        setError(err.message || "No se pudo guardar la configuración.");
+        setError(errorMessage(err, t, t.settings.saveFailed));
       } finally {
         setSaving(false);
       }
@@ -270,13 +273,13 @@ function SettingsContent() {
     api
       .updateAppSettings({ native_language: code })
       .then(() => announceNativeLanguage(code))
-      .catch((err) => setError(err.message || "No se pudo guardar la configuración."));
+      .catch((err) => setError(errorMessage(err, t, t.settings.saveFailed)));
   };
 
   const handleAutoCheckUpdatesChange = (enabled: boolean) => {
     setAutoCheckUpdates(enabled);
     api.updateAppSettings({ auto_check_updates: enabled }).catch((err) => {
-      setError(err.message || "No se pudo guardar la configuración.");
+      setError(errorMessage(err, t, t.settings.saveFailed));
     });
   };
 
@@ -287,18 +290,14 @@ function SettingsContent() {
       const info = await api.getUpdates(true);
       setUpdateInfo(info);
       if (info.error) {
-        setUpdateMessage(info.error);
+        setUpdateMessage(errorText(info.error, t, t.settings.checkFailed));
       } else if (info.update_available) {
         setUpdateDialogOpen(true);
       } else {
-        setUpdateMessage(
-          info.latest_version
-            ? `Tienes la última versión (${info.current_version}).`
-            : "Todavía no hay versiones publicadas."
-        );
+        setUpdateMessage(info.latest_version ? t.settings.upToDate(info.current_version) : t.settings.noReleases);
       }
     } catch (err: any) {
-      setUpdateMessage(err.message || "No se pudo buscar actualizaciones.");
+      setUpdateMessage(errorMessage(err, t, t.settings.checkFailed));
     } finally {
       setCheckingUpdates(false);
     }
@@ -330,36 +329,37 @@ function SettingsContent() {
     }
   };
 
+  const [sampleFirst, sampleSecond, sampleRest] = t.settings.readingSample;
   const modeOptions: OptionDef<boolean>[] = [
     {
       value: true,
-      title: "Lectura en automático",
+      title: t.settings.autoTitle,
       isDefault: true,
-      description:
-        "Lee una oración enseguida de la otra de forma continua mientras las va resaltando en la página.",
+      description: t.settings.autoDescription,
       example: (
         <span>
           <span className="rounded px-1 py-0.5" style={{ background: "var(--hl)" }}>
-            En un lugar de la Mancha,
+            {sampleFirst}
           </span>{" "}
           <span className="rounded px-1 py-0.5" style={{ background: "var(--hl)" }}>
-            de cuyo nombre no quiero acordarme,
+            {sampleSecond}
           </span>{" "}
-          <span style={{ color: "var(--faded)" }}>no ha mucho tiempo…</span>
+          <span style={{ color: "var(--faded)" }}>{sampleRest}</span>
         </span>
       ),
     },
     {
       value: false,
-      title: "Solo al clickear la frase",
-      description:
-        "Reproduce únicamente la oración en la que hagas clic y se detiene automáticamente al terminarla.",
+      title: t.settings.clickTitle,
+      description: t.settings.clickDescription,
       example: (
         <span>
           <span className="rounded px-1 py-0.5" style={{ background: "var(--hl)" }}>
-            En un lugar de la Mancha,
+            {sampleFirst}
           </span>{" "}
-          <span style={{ color: "var(--faded)" }}>de cuyo nombre no quiero acordarme, no ha mucho tiempo…</span>
+          <span style={{ color: "var(--faded)" }}>
+            {sampleSecond} {sampleRest}
+          </span>
         </span>
       ),
     },
@@ -368,11 +368,10 @@ function SettingsContent() {
   const boundaryOptions: OptionDef<Boundary>[] = [
     {
       value: "SentenceBoundary",
-      title: "Por oración",
+      title: t.settings.bySentence,
       technical: "SentenceBoundary",
       isDefault: true,
-      description:
-        "Mayor fluidez por oración: sincroniza y selecciona oraciones completas de principio a fin, ideal para lectura fluida por bloques.",
+      description: t.settings.bySentenceDescription,
       example: (
         <span>
           <span className="rounded px-1 py-0.5" style={{ background: "var(--hl)" }}>
@@ -384,10 +383,9 @@ function SettingsContent() {
     },
     {
       value: "WordBoundary",
-      title: "Por palabra",
+      title: t.settings.byWord,
       technical: "WordBoundary",
-      description:
-        "Permite seleccionar palabras individuales: extrae el tiempo exacto de cada palabra para que puedas hacer clic en cualquier palabra de una frase y escuchar solo esa palabra.",
+      description: t.settings.byWordDescription,
       example: (
         <span>
           <span className="rounded px-1 py-0.5" style={{ background: "var(--hl)" }}>
@@ -420,10 +418,10 @@ function SettingsContent() {
               className="m-0 font-serif text-[40px] leading-[1.15] font-normal tracking-[-0.015em]"
               style={{ color: "var(--ink)" }}
             >
-              Configuración
+              {t.settings.title}
             </h1>
             <p className="m-0 mt-2.5 text-base" style={{ color: "var(--muted)" }}>
-              Cómo te lee Letha. Los cambios se guardan solos en este equipo.
+              {t.settings.subtitle}
             </p>
           </div>
 
@@ -443,11 +441,7 @@ function SettingsContent() {
                 <Check className="w-4 h-4 text-[var(--accent)]" strokeWidth={2} />
               )}
               <span>
-                {saving
-                  ? "Guardando…"
-                  : savedNotice
-                  ? "Cambios guardados"
-                  : "Cambios guardados en este equipo"}
+                {saving ? t.common.saving : savedNotice ? t.settings.saved : t.settings.savedOnDevice}
               </span>
             </p>
 
@@ -457,7 +451,7 @@ function SettingsContent() {
               style={{ color: "var(--ink)" }}
             >
               <ArrowLeft className="w-4 h-4" strokeWidth={1.6} />
-              <span>{bookId ? "Volver al libro" : "Volver a la biblioteca"}</span>
+              <span>{bookId ? t.settings.backToBook : t.common.backToLibrary}</span>
             </Link>
           </div>
         </header>
@@ -465,7 +459,7 @@ function SettingsContent() {
         {loading ? (
           <div className="py-24 flex flex-col items-center justify-center gap-3" style={{ color: "var(--muted)" }}>
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--accent)" }} />
-            <span className="text-sm">Cargando configuración...</span>
+            <span className="text-sm">{t.settings.loading}</span>
           </div>
         ) : (
           <div className="divide-y divide-[var(--track)]">
@@ -473,10 +467,10 @@ function SettingsContent() {
             <section aria-labelledby="settings-native-language-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
               <div className="flex-1 min-w-[280px] max-w-[380px]">
                 <h2 id="settings-native-language-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
-                  Idioma nativo
+                  {t.settings.nativeLanguage}
                 </h2>
                 <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
-                  Letha traduce a este idioma las oraciones que lees y escuchas.
+                  {t.settings.nativeLanguageHint}
                 </p>
               </div>
 
@@ -493,8 +487,8 @@ function SettingsContent() {
 
             <OptionGrid
               name="reading-mode"
-              legend="Modo de lectura"
-              description="Elige si la lectura avanza de corrido oración tras oración o si solo se lee la frase que selecciones."
+              legend={t.settings.readingMode}
+              description={t.settings.readingModeHint}
               options={modeOptions}
               value={autoAdvance}
               onChange={handleModeChange}
@@ -512,21 +506,21 @@ function SettingsContent() {
                   <div className="flex-1 min-w-0 pr-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[15px] font-medium" style={{ color: "var(--ink)" }}>
-                        Pasar páginas automáticamente
+                        {t.settings.autoPage}
                       </span>
                       <span className="text-xs" style={{ color: "var(--muted)" }}>
-                        Por defecto
+                        {t.common.default}
                       </span>
                     </div>
                     <p className="m-0 mt-1 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
-                      Al terminar de escuchar la última frase de la página, pasa a la siguiente y continúa la lectura sin detenerse.
+                      {t.settings.autoPageDescription}
                     </p>
                   </div>
 
                   <label
                     htmlFor="auto-advance-page-toggle"
                     className="relative inline-flex items-center shrink-0 cursor-pointer select-none"
-                    aria-label="Pasar páginas automáticamente"
+                    aria-label={t.settings.autoPage}
                   >
                     <input
                       id="auto-advance-page-toggle"
@@ -554,8 +548,8 @@ function SettingsContent() {
 
             <OptionGrid
               name="boundary"
-              legend="Resaltar mientras escuchas"
-              description="Ajusta la forma en que el lector segmenta el texto y la fluidez con la que lee."
+              legend={t.settings.highlight}
+              description={t.settings.highlightHint}
               options={boundaryOptions}
               value={boundaryType}
               onChange={handleBoundaryChange}
@@ -565,13 +559,13 @@ function SettingsContent() {
             <section aria-labelledby="speed-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
               <div className="flex-1 min-w-[280px] max-w-[380px]">
                 <h2 id="speed-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
-                  Velocidad de la voz
+                  {t.settings.speed}
                 </h2>
                 <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
-                  La velocidad con la que se genera el audio. A diferencia del control 1.0× del lector, conserva la entonación natural sin distorsión.
+                  {t.settings.speedHint}
                 </p>
                 <p className="m-0 mt-3 text-sm" style={{ color: "var(--muted)" }}>
-                  Recomendado: 85%.
+                  {t.settings.speedRecommended}
                 </p>
               </div>
 
@@ -597,7 +591,7 @@ function SettingsContent() {
 
                 <div>
                   <label htmlFor="speed-slider" className="sr-only">
-                    Velocidad de la voz en porcentaje
+                    {t.settings.speedSlider}
                   </label>
                   <input
                     id="speed-slider"
@@ -614,9 +608,9 @@ function SettingsContent() {
                     aria-valuetext={`${percent}%`}
                   />
                   <div className="relative h-5 text-xs tabular-nums mt-1 select-none" style={{ color: "var(--muted)" }}>
-                    <span className="absolute left-0">50% · Lento</span>
+                    <span className="absolute left-0">50% · {t.settings.slow}</span>
                     <span className="absolute left-1/2 -translate-x-1/2 font-medium" style={{ color: "var(--ink)" }}>
-                      85% · Recomendado
+                      85% · {t.settings.recommended}
                     </span>
                     <span className="absolute left-[71.4%] -translate-x-1/2">
                       100% · Edge
@@ -629,7 +623,7 @@ function SettingsContent() {
                   <div className="flex flex-wrap items-center gap-2">
                     <div
                       role="group"
-                      aria-label="Velocidades frecuentes"
+                      aria-label={t.settings.presets}
                       className="flex flex-wrap gap-0.5 p-1 rounded-full"
                       style={{
                         background: "var(--glass-seg)",
@@ -665,7 +659,7 @@ function SettingsContent() {
                         style={{ color: "var(--muted)" }}
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Restaurar a 85%</span>
+                        <span>{t.settings.reset}</span>
                       </button>
                     )}
                   </div>
@@ -695,9 +689,7 @@ function SettingsContent() {
                       )}
                     </span>
                     <span>
-                      {sampleState === "playing"
-                        ? "Detener"
-                        : "Probar velocidad"}
+                      {sampleState === "playing" ? t.common.stop : t.settings.trySpeed}
                     </span>
                   </button>
                 </div>
@@ -708,10 +700,10 @@ function SettingsContent() {
             <section aria-labelledby="appearance-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
               <div className="flex-1 min-w-[280px] max-w-[380px]">
                 <h2 id="appearance-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
-                  Apariencia
+                  {t.settings.appearance}
                 </h2>
                 <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
-                  Claro, sepia u oscuro para toda la app. El texto se adapta automáticamente para máxima legibilidad.
+                  {t.settings.appearanceHint}
                 </p>
               </div>
 
@@ -724,13 +716,13 @@ function SettingsContent() {
               >
                 <div
                   role="radiogroup"
-                  aria-label="Tema"
+                  aria-label={t.nav.theme}
                   className="grid grid-cols-1 sm:grid-cols-3 gap-2.5"
                 >
                   {[
                     {
                       id: "light" as Theme,
-                      label: "Claro",
+                      label: t.themes.light,
                       ambient:
                         "radial-gradient(850px 700px at 4% 0%, rgba(195, 205, 218, 0.55) 0%, rgba(195, 205, 218, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(165, 178, 192, 0.35) 0%, rgba(165, 178, 192, 0) 62%), linear-gradient(160deg, #f7f8fa 0%, #ebeef2 100%)",
                       sheet: "linear-gradient(180deg, rgba(255,255,255,0.60) 0%, rgba(251,252,254,0.38) 100%)",
@@ -739,7 +731,7 @@ function SettingsContent() {
                     },
                     {
                       id: "sepia" as Theme,
-                      label: "Sepia",
+                      label: t.themes.sepia,
                       ambient:
                         "radial-gradient(850px 700px at 4% 0%, rgba(214, 185, 150, 0.55) 0%, rgba(214, 185, 150, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(175, 155, 130, 0.30) 0%, rgba(175, 155, 130, 0) 62%), linear-gradient(160deg, #f4eee4 0%, #eae2d4 100%)",
                       sheet: "linear-gradient(180deg, rgba(250,244,232,0.62) 0%, rgba(243,234,216,0.40) 100%)",
@@ -748,22 +740,22 @@ function SettingsContent() {
                     },
                     {
                       id: "dark" as Theme,
-                      label: "Oscuro",
+                      label: t.themes.dark,
                       ambient:
                         "radial-gradient(850px 700px at 4% 0%, rgba(65, 76, 92, 0.45) 0%, rgba(65, 76, 92, 0) 65%), radial-gradient(950px 750px at 96% 8%, rgba(42, 52, 65, 0.55) 0%, rgba(42, 52, 65, 0) 62%), linear-gradient(160deg, #101216 0%, #090a0d 100%)",
                       sheet: "linear-gradient(180deg, rgba(22,25,30,0.54) 0%, rgba(14,16,20,0.38) 100%)",
                       ink: "#e6e9ed",
                       hl: "rgba(154,179,207,0.25)",
                     },
-                  ].map((t) => {
-                    const isActive = theme === t.id;
+                  ].map((option) => {
+                    const isActive = theme === option.id;
                     return (
                       <button
-                        key={t.id}
+                        key={option.id}
                         type="button"
                         role="radio"
                         aria-checked={isActive}
-                        onClick={() => setTheme(t.id)}
+                        onClick={() => setTheme(option.id)}
                         className="tile text-left p-0 border-0 rounded-[20px] overflow-hidden cursor-pointer flex flex-col"
                         style={{
                           background: isActive ? "var(--tile-on)" : "var(--tile-off)",
@@ -773,20 +765,20 @@ function SettingsContent() {
                       >
                         <span
                           className="m-1.5 p-3.5 rounded-2xl block"
-                          style={{ background: t.ambient }}
+                          style={{ background: option.ambient }}
                         >
                           <span
                             className="block p-2.5 rounded-[10px] font-serif text-[15px] leading-normal"
-                            style={{ background: t.sheet, color: t.ink }}
+                            style={{ background: option.sheet, color: option.ink }}
                           >
-                            Frisaba la edad de nuestro{" "}
-                            <span className="rounded px-1 py-0.5" style={{ background: t.hl }}>
-                              hidalgo
+                            {t.settings.appearanceSample.before}
+                            <span className="rounded px-1 py-0.5" style={{ background: option.hl }}>
+                              {t.settings.appearanceSample.highlight}
                             </span>
                             …
                           </span>
                         </span>
-                        <span className="p-3 pt-2 text-sm font-medium">{t.label}</span>
+                        <span className="p-3 pt-2 text-sm font-medium">{option.label}</span>
                       </button>
                     );
                   })}
@@ -794,11 +786,11 @@ function SettingsContent() {
 
                 <div className="flex flex-wrap items-center gap-3.5 p-1 pt-2">
                   <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-                    Tamaño del texto
+                    {t.settings.textSize}
                   </span>
                   <div
                     role="radiogroup"
-                    aria-label="Tamaño del texto"
+                    aria-label={t.settings.textSize}
                     className="flex flex-wrap gap-0.5 p-1 rounded-full"
                     style={{
                       background: "var(--glass-seg)",
@@ -806,10 +798,10 @@ function SettingsContent() {
                     }}
                   >
                     {[
-                      { key: "sm" as FontSize, label: "Pequeño", fs: "13px" },
-                      { key: "base" as FontSize, label: "Mediano", fs: "15px" },
-                      { key: "lg" as FontSize, label: "Grande", fs: "17px" },
-                      { key: "xl" as FontSize, label: "Muy grande", fs: "19px" },
+                      { key: "sm" as FontSize, label: t.fontSizes.sm, fs: "13px" },
+                      { key: "base" as FontSize, label: t.fontSizes.base, fs: "15px" },
+                      { key: "lg" as FontSize, label: t.fontSizes.lg, fs: "17px" },
+                      { key: "xl" as FontSize, label: t.fontSizes.xl, fs: "19px" },
                     ].map((z) => {
                       const active = fontSize === z.key;
                       return (
@@ -845,10 +837,10 @@ function SettingsContent() {
             <section aria-labelledby="updates-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
               <div className="flex-1 min-w-[280px] max-w-[380px]">
                 <h2 id="updates-title" className="m-0 text-base font-medium" style={{ color: "var(--ink)" }}>
-                  Actualizaciones
+                  {t.settings.updates}
                 </h2>
                 <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
-                  Letha te avisa cuando hay una versión nueva y solo se actualiza cuando tú lo decides. Tu biblioteca y tu progreso se conservan.
+                  {t.settings.updatesHint}
                 </p>
               </div>
 
@@ -865,7 +857,7 @@ function SettingsContent() {
                 >
                   <div className="min-w-0">
                     <p className="m-0 text-[15px] font-medium" style={{ color: "var(--ink)" }}>
-                      Versión instalada: {updateInfo?.current_version ?? "…"}
+                      {t.settings.installedVersion(updateInfo?.current_version ?? "…")}
                     </p>
                     {updateMessage && (
                       <p className="m-0 mt-1 text-sm" style={{ color: "var(--soft)" }}>
@@ -885,7 +877,7 @@ function SettingsContent() {
                     ) : (
                       <RotateCcw className="w-4 h-4" />
                     )}
-                    <span>Buscar actualizaciones</span>
+                    <span>{t.settings.checkUpdates}</span>
                   </button>
                 </div>
 
@@ -901,21 +893,21 @@ function SettingsContent() {
                   <div className="flex-1 min-w-0 pr-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[15px] font-medium" style={{ color: "var(--ink)" }}>
-                        Buscar al abrir Letha
+                        {t.settings.checkOnLaunch}
                       </span>
                       <span className="text-xs" style={{ color: "var(--muted)" }}>
-                        Por defecto
+                        {t.common.default}
                       </span>
                     </div>
                     <p className="m-0 mt-1 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
-                      Consulta como mucho una vez al día si hay una versión nueva y te avisa en la biblioteca.
+                      {t.settings.checkOnLaunchDescription}
                     </p>
                   </div>
 
                   <label
                     htmlFor="auto-check-updates-toggle"
                     className="relative inline-flex items-center shrink-0 cursor-pointer select-none"
-                    aria-label="Buscar actualizaciones al abrir Letha"
+                    aria-label={t.settings.checkOnLaunchLabel}
                   >
                     <input
                       id="auto-check-updates-toggle"
@@ -971,7 +963,7 @@ function SettingsContent() {
 
         <footer className="pt-8 border-t" style={{ borderColor: "var(--track)" }}>
           <p className="m-0 text-[13px]" style={{ color: "var(--muted)" }}>
-            Letha{updateInfo ? ` ${updateInfo.current_version}` : ""} · Las voces neurales vienen de Microsoft Edge TTS y necesitan conexión a internet.
+            Letha{updateInfo ? ` ${updateInfo.current_version}` : ""} · {t.settings.footer}
           </p>
         </footer>
       </main>
@@ -980,12 +972,13 @@ function SettingsContent() {
 }
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   return (
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center gap-3" style={{ color: "var(--muted)" }}>
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--accent)" }} />
-          <span className="text-sm">Cargando configuración...</span>
+          <span className="text-sm">{t.settings.loading}</span>
         </div>
       }
     >

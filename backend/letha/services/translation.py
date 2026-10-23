@@ -14,23 +14,13 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from letha import database
 
+# Deben ser los idiomas en los que está traducida la interfaz (frontend/lib/i18n/messages)
 NATIVE_LANGUAGES = {
     "es": "Español",
     "en": "English",
     "fr": "Français",
     "it": "Italiano",
     "pt": "Português",
-    "de": "Deutsch",
-    "nl": "Nederlands",
-    "pl": "Polski",
-    "ru": "Русский",
-    "uk": "Українська",
-    "tr": "Türkçe",
-    "ar": "العربية",
-    "hi": "हिन्दी",
-    "ja": "日本語",
-    "ko": "한국어",
-    "zh": "中文（简体）",
 }
 
 FAILURE_COOLDOWN_SECONDS = 300
@@ -60,10 +50,6 @@ class Provider:
     name = ""
     max_items = 1
     max_chars = 1
-    codes: Dict[str, str] = {}
-
-    def code(self, language: str) -> str:
-        return self.codes.get(language, language)
 
     def translate(self, texts: List[str], source: str, target: str) -> List[str]:
         raise NotImplementedError
@@ -75,11 +61,10 @@ class MicrosoftProvider(Provider):
     name = "microsoft"
     max_items = 100
     max_chars = 20000
-    codes = {"zh": "zh-Hans"}
 
     def translate(self, texts: List[str], source: str, target: str) -> List[str]:
         query = urllib.parse.urlencode(
-            {"from": self.code(source), "to": self.code(target), "isEnterpriseClient": "false"}
+            {"from": source, "to": target, "isEnterpriseClient": "false"}
         )
         data = _post_json(
             f"https://edge.microsoft.com/translate/translatetext?{query}",
@@ -98,10 +83,9 @@ class GoogleProvider(Provider):
     name = "google"
     max_items = 40
     max_chars = 4500
-    codes = {"zh": "zh-CN"}
 
     def translate(self, texts: List[str], source: str, target: str) -> List[str]:
-        query = urllib.parse.urlencode({"client": "gtx", "sl": self.code(source), "tl": self.code(target)})
+        query = urllib.parse.urlencode({"client": "gtx", "sl": source, "tl": target})
         data = _post_json(
             f"https://translate.googleapis.com/translate_a/t?{query}",
             urllib.parse.urlencode([("q", t) for t in texts]).encode(),

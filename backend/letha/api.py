@@ -49,6 +49,31 @@ _PREVIEW_TEXTS = {
     "pt": "Olá, eu sou {persona}. Vou ler este livro para você.",
 }
 
+# La interfaz muestra el texto de cada código en su idioma; el mensaje en inglés es solo el respaldo
+_ERROR_MESSAGES = {
+    "invalid_token": "Invalid or missing session token.",
+    "invalid_voice": "Invalid voice name.",
+    "voice_language_mismatch": "The chosen voice doesn't match the book's language.",
+    "unsupported_native_language": "Unsupported native language.",
+    "pdf_only": "Only PDF files are supported.",
+    "unsupported_language": "Unsupported language.",
+    "pdf_processing_failed": "The PDF could not be processed.",
+    "pdf_without_text": "The PDF has no extractable text (it looks like a scanned document).",
+    "book_not_saved": "The book could not be saved.",
+    "book_not_found": "Book not found.",
+    "cover_not_found": "Cover not available.",
+    "chapter_not_found": "Chapter not found.",
+    "native_language_required": "Set your native language to see translations.",
+    "audio_not_ready": "This chapter's audio hasn't been generated for the selected voice yet.",
+}
+
+
+def _api_error(status_code: int, code: str, message: Optional[str] = None) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message or _ERROR_MESSAGES[code]},
+    )
+
 
 def set_token(token: Optional[str]) -> None:
     """Establece el token de sesión requerido por la aplicación empaquetada."""
@@ -64,19 +89,13 @@ def busy() -> bool:
 def _validate_voice_name(voice: str) -> str:
     """Valida que el nombre de voz tenga un formato seguro antes de usarlo en nombres de archivo."""
     if not _VOICE_RE.fullmatch(voice):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nombre de voz inválido.",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "invalid_voice")
     return voice
 
 
 def _ensure_voice_matches_language(voice: str, language: str) -> None:
     if tts_service.voice_language(voice) != language:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La voz elegida no corresponde al idioma del libro.",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "voice_language_mismatch")
 
 
 @asynccontextmanager
@@ -110,7 +129,7 @@ async def verify_token_middleware(request: Request, call_next):
             if header_token != _required_token and cookie_token != _required_token:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Token de sesión inválido o ausente."},
+                    content={"detail": {"code": "invalid_token", "message": _ERROR_MESSAGES["invalid_token"]}},
                 )
     return await call_next(request)
 
@@ -135,10 +154,7 @@ def get_app_settings():
 @app.put("/api/settings", response_model=AppSettings)
 def update_app_settings(payload: UpdateAppSettingsRequest):
     if payload.native_language is not None and payload.native_language not in translation_service.NATIVE_LANGUAGES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Idioma nativo no soportado.",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "unsupported_native_language")
     speed = (
         database.set_edge_base_speed(payload.edge_base_speed)
         if payload.edge_base_speed is not None
@@ -209,7 +225,7 @@ def install_update():
     try:
         return updates_service.start_update()
     except updates_service.UpdateError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise _api_error(status.HTTP_409_CONFLICT, e.code, str(e))
 
 
 @app.get("/api/voices", response_model=List[VoiceItem])
@@ -258,18 +274,12 @@ def upload_book(
     sin bloquear el event loop mientras PyMuPDF analiza el documento y renderiza la portada.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se admiten archivos PDF.",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "pdf_only")
 
     chosen_voice = _validate_voice_name(voice) if voice else DEFAULT_VOICE
     chosen_language = (language or tts_service.voice_language(chosen_voice)).lower()
     if chosen_language not in tts_service.SUPPORTED_LANGUAGES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Idioma no soportado.",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "unsupported_language")
     _ensure_voice_matches_language(chosen_voice, chosen_language)
 
     book_id = uuid.uuid4().hex[:12]
@@ -285,9 +295,10 @@ def upload_book(
     except Exception as e:
         if saved_pdf_path.exists():
             saved_pdf_path.unlink()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al procesar el PDF: {str(e)}",
+        raise _api_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "pdf_processing_failed",
+            f"The PDF could not be processed: {e}",
         )
 
     if not chapters_data:
@@ -296,10 +307,7 @@ def upload_book(
         cover_file = book_info.get("cover_path")
         if cover_file and Path(cover_file).exists():
             Path(cover_file).unlink()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El PDF no contiene texto extraíble (parece ser un documento escaneado).",
-        )
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "pdf_without_text")
 
     orig_name = Path(file.filename or "Libro").stem
     meta_title = book_info.get("title")
@@ -322,7 +330,7 @@ def upload_book(
 
     detail = database.get_book(book_id)
     if not detail:
-        raise HTTPException(status_code=500, detail="No se pudo registrar el libro.")
+        raise _api_error(500, "book_not_saved")
     return detail
 
 
@@ -330,7 +338,7 @@ def upload_book(
 def get_book_detail(book_id: str):
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
     return book
 
 
@@ -338,14 +346,14 @@ def get_book_detail(book_id: str):
 def get_book_cover(book_id: str):
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
 
     with database.get_connection() as conn:
         row = conn.execute(
             "SELECT cover_path FROM books WHERE id = ?", (book_id,)
         ).fetchone()
         if not row or not row["cover_path"] or not Path(row["cover_path"]).exists():
-            raise HTTPException(status_code=404, detail="Portada no disponible.")
+            raise _api_error(404, "cover_not_found")
         return FileResponse(row["cover_path"], media_type="image/png")
 
 
@@ -354,7 +362,7 @@ def get_chapter(book_id: str, chapter_idx: int, voice: Optional[str] = None):
     validated_voice = _validate_voice_name(voice) if voice else None
     chapter = database.get_chapter(book_id, chapter_idx, voice=validated_voice)
     if not chapter:
-        raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
+        raise _api_error(404, "chapter_not_found")
     return chapter
 
 
@@ -366,16 +374,13 @@ def get_chapter_translations(book_id: str, chapter_idx: int):
     """
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
     native = database.get_native_language()
     if not native:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Configura tu idioma nativo para ver traducciones.",
-        )
+        raise _api_error(status.HTTP_409_CONFLICT, "native_language_required")
     chapter = database.get_chapter(book_id, chapter_idx)
     if not chapter:
-        raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
+        raise _api_error(404, "chapter_not_found")
     result = translation_service.translate([s.text for s in chapter.sentences], book.language, native)
     return ChapterTranslations(source=book.language, target=native, **result)
 
@@ -391,13 +396,13 @@ async def synthesize_chapter(
     global _active_jobs
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
 
     target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
 
     chapter = database.get_chapter(book_id, chapter_idx, voice=target_voice)
     if not chapter:
-        raise HTTPException(status_code=404, detail="Capítulo no encontrado.")
+        raise _api_error(404, "chapter_not_found")
 
     if total_parts < 1 or total_parts > 20:
         total_parts = tts_service.DEFAULT_PAGE_PARTS
@@ -556,7 +561,7 @@ async def synthesize_chapter(
 def get_chapter_audio(book_id: str, chapter_idx: int, voice: Optional[str] = None):
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
 
     target_voice = _validate_voice_name(voice or book.voice or DEFAULT_VOICE)
     base_prefix = f"{book_id}_c{chapter_idx}_{target_voice}_{tts_service.AUDIO_CACHE_TAG}"
@@ -576,17 +581,14 @@ def get_chapter_audio(book_id: str, chapter_idx: int, voice: Optional[str] = Non
             headers={"Cache-Control": "no-store"},
         )
 
-    raise HTTPException(
-        status_code=404,
-        detail="El audio de este capítulo aún no ha sido sintetizado para la voz seleccionada.",
-    )
+    raise _api_error(404, "audio_not_ready")
 
 
 @app.put("/api/books/{book_id}/progress")
 def update_progress(book_id: str, payload: UpdateProgressRequest):
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
     database.update_progress(book_id, payload.chapter_idx, payload.sentence_idx)
     return {"status": "ok"}
 
@@ -595,7 +597,7 @@ def update_progress(book_id: str, payload: UpdateProgressRequest):
 def update_settings(book_id: str, payload: UpdateBookSettingsRequest):
     book = database.get_book(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
     validated_voice = _validate_voice_name(payload.voice) if payload.voice is not None else None
     if validated_voice is not None and validated_voice != book.voice:
         _ensure_voice_matches_language(validated_voice, book.language)
@@ -607,7 +609,7 @@ def update_settings(book_id: str, payload: UpdateBookSettingsRequest):
 def delete_book(book_id: str):
     info = database.delete_book(book_id)
     if not info:
-        raise HTTPException(status_code=404, detail="Libro no encontrado.")
+        raise _api_error(404, "book_not_found")
 
     for key in ("file_path", "cover_path"):
         if info.get(key):

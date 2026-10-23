@@ -14,17 +14,17 @@ say() { printf '%s\n' "$*"; }
 fail() { printf '\n%s\n' "$*" >&2; exit 1; }
 
 say ""
-say "Instalando Letha…"
+say "Installing Letha…"
 
-[ "$(uname -s)" = "Darwin" ] || fail "Letha por ahora solo funciona en macOS."
-[ "$(uname -m)" = "arm64" ] || fail "Letha necesita una Mac con Apple Silicon (M1 o posterior)."
+[ "$(uname -s)" = "Darwin" ] || fail "For now, Letha only runs on macOS."
+[ "$(uname -m)" = "arm64" ] || fail "Letha needs a Mac with Apple Silicon (M1 or later)."
 
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
-  say "→ Instalando uv (instalador ultrarrápido de Python)..."
+  say "→ Installing uv (fast Python installer)…"
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-command -v uv >/dev/null 2>&1 || fail "No se pudo instalar uv. Revisa tu conexión a internet."
+command -v uv >/dev/null 2>&1 || fail "uv could not be installed. Check your internet connection."
 
 first_wheel() {
   grep -o '"browser_download_url": *"[^"]*\.whl"' | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
@@ -36,19 +36,19 @@ if [ -z "$WHEEL" ]; then
   if [ -z "$WHEEL" ]; then
     WHEEL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null | first_wheel || true)"
   fi
-  [ -n "$WHEEL" ] || fail "No se encontró ninguna versión publicada de Letha todavía."
+  [ -n "$WHEEL" ] || fail "No published version of Letha was found yet."
 fi
 
 VERSION="$(basename "$WHEEL" | sed -n 's/^letha-\([^-]*\)-.*\.whl$/\1/p')"
 VERSION="${VERSION:-0.1.0}"
 
-say "→ Instalando Letha $VERSION..."
+say "→ Installing Letha $VERSION…"
 uv tool install --force --python 3.12 "$WHEEL"
 
 BIN="$(uv tool dir --bin --color never)/letha"
-[ -x "$BIN" ] || fail "La instalación terminó pero no se encuentra el comando letha."
+[ -x "$BIN" ] || fail "The installation finished but the letha command was not found."
 
-say "→ Creando el acceso directo en $APP"
+say "→ Creating the shortcut in $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 
@@ -89,9 +89,9 @@ EOF
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 
 say ""
-say "✓ Listo. Letha está en tu carpeta de Aplicaciones: búscalo con Spotlight (⌘ + espacio, 'Letha')."
-say "Para actualizarlo: vuelve a ejecutar este comando."
-say "Para desinstalarlo: uv tool uninstall letha && rm -rf \"$APP\" ~/.cache/letha ~/.local/share/letha"
+say "✓ Done. Letha is in your Applications folder: find it with Spotlight (⌘ + space, 'Letha')."
+say "To update it: run this command again."
+say "To uninstall it: uv tool uninstall letha && rm -rf \"$APP\" ~/.cache/letha ~/.local/share/letha"
 
 if [ -z "${LETHA_NO_LAUNCH:-}" ]; then
   open "$APP"

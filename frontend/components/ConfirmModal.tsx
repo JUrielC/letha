@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "@/lib/i18n";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -19,11 +20,13 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel,
-  cancelLabel = "Cancelar",
+  cancelLabel,
   destructive = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t } = useI18n();
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -86,7 +89,7 @@ export function ConfirmModal({
             className="quiet inline-flex items-center h-11 px-4 rounded-full border-0 text-[15px] font-medium cursor-pointer"
             style={{ color: "var(--soft)" }}
           >
-            {cancelLabel}
+            {cancelLabel ?? t.common.cancel}
           </button>
           <button
             type="button"

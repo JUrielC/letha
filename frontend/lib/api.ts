@@ -65,7 +65,6 @@ export interface VoiceItem {
   short_name: string;
   gender: string;
   locale: string;
-  friendly_name: string;
 }
 
 export interface AppSettings {
@@ -133,6 +132,19 @@ export function getToken(): string {
   return "";
 }
 
+export class ApiError extends Error {
+  constructor(public code: string | null, message: string) {
+    super(message);
+  }
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const data = await res.json().catch(() => null);
+  const detail = data?.detail;
+  if (detail && typeof detail.code === "string") return new ApiError(detail.code, detail.message);
+  return new ApiError(null, typeof detail === "string" ? detail : `Error ${res.status}`);
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getBaseUrl();
   const url = `${base}${path}`;
@@ -142,10 +154,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers.set("X-Letha-Token", token);
   }
   const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(errData.detail || `Error ${res.status}`);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.json() as Promise<T>;
 }
 
@@ -224,10 +233,7 @@ export const api = {
       body: formData,
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: "Error al subir PDF" }));
-      throw new Error(err.detail || "Error al subir PDF");
-    }
+    if (!res.ok) throw await toApiError(res);
 
     return res.json();
   },

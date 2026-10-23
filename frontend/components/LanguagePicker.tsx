@@ -3,6 +3,7 @@
 import React from "react";
 import { Check } from "lucide-react";
 import { TranslationLanguage } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 interface LanguagePickerProps {
   languages: TranslationLanguage[];
@@ -11,8 +12,9 @@ interface LanguagePickerProps {
 }
 
 export function LanguagePicker({ languages, value, onChange }: LanguagePickerProps) {
+  const { t } = useI18n();
   return (
-    <div role="radiogroup" aria-label="Idioma nativo" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <div role="radiogroup" aria-label={t.settings.nativeLanguage} className="grid grid-cols-2 sm:grid-cols-3 gap-2">
       {languages.map((language) => {
         const selected = language.code === value;
         return (

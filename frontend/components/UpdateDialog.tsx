@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { api, UpdateInfo } from "@/lib/api";
+import { errorMessage, errorText, useI18n } from "@/lib/i18n";
 
 interface UpdateDialogProps {
   info: UpdateInfo;
@@ -17,6 +18,7 @@ type Phase = "idle" | "installing" | "started" | "error";
 export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
   const busy = phase === "installing" || phase === "started";
 
   useEffect(() => {
@@ -36,21 +38,20 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
       // En Windows la versión nueva abre otra ventana de Edge; esta intenta cerrarse sola
       if (info.platform === "win32") setTimeout(() => window.close(), 4000);
     } catch (err: any) {
-      setError(err.message || "No se pudo actualizar Letha.");
+      setError(errorMessage(err, t, t.updates.installFailed));
       setPhase("error");
     }
   };
 
   const showNotes =
     info.notes.length > 0 && (mode === "available" || info.latest_version === info.current_version);
-  const title =
-    mode === "updated"
-      ? `Letha se actualizó a la versión ${info.current_version}`
-      : `Letha ${info.latest_version} está disponible`;
+  const latest = info.latest_version ?? "";
+  const title = mode === "updated" ? t.updates.updatedTo(info.current_version) : t.updates.available(latest);
   const subtitle =
     mode === "updated"
-      ? `Antes tenías la versión ${info.updated_from}. Tu biblioteca y tu progreso siguen igual.`
-      : `Tienes la versión ${info.current_version}. Tu biblioteca y tu progreso se conservan al actualizar.`;
+      ? t.updates.updatedSubtitle(info.updated_from ?? "")
+      : t.updates.availableSubtitle(info.current_version);
+  const unavailableReason = info.self_update_unavailable_reason;
 
   return createPortal(
     <div
@@ -92,7 +93,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
             style={{ background: "var(--glass-sub)", boxShadow: "var(--ring-sub)" }}
           >
             <p className="m-0 mb-2 text-sm font-medium" style={{ color: "var(--ink)" }}>
-              Novedades
+              {t.updates.whatsNew}
             </p>
             <ul className="m-0 pl-5 space-y-1.5 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
               {info.notes.map((note, idx) => (
@@ -104,10 +105,12 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
 
         {mode === "available" && !info.can_self_update && (
           <div className="text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
-            <p className="m-0">{info.self_update_unavailable_reason}</p>
+            {unavailableReason && (
+              <p className="m-0">{errorText(unavailableReason, t, unavailableReason)}</p>
+            )}
             {info.install_command && (
               <>
-                <p className="m-0 mt-2">También puedes actualizar ejecutando en la terminal:</p>
+                <p className="m-0 mt-2">{t.updates.terminalHint}</p>
                 <code
                   className="mt-2 block font-mono text-xs p-3 rounded-[14px] break-all select-all"
                   style={{ background: "var(--sample)", color: "var(--ink)" }}
@@ -122,15 +125,13 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
         {phase === "installing" && (
           <p className="m-0 flex items-center gap-2 text-sm" style={{ color: "var(--soft)" }}>
             <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--accent)" }} />
-            Descargando y verificando la versión {info.latest_version}…
+            {t.updates.downloading(latest)}
           </p>
         )}
 
         {phase === "started" && (
           <p className="m-0 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
-            {info.platform === "win32"
-              ? `Listo. Letha se cerrará y se abrirá en una ventana nueva con la versión ${info.latest_version}. Si esta ventana no se cierra sola, puedes cerrarla.`
-              : `Listo. Letha se cerrará y volverá a abrirse con la versión ${info.latest_version} en unos segundos.`}
+            {info.platform === "win32" ? t.updates.restartingWindows(latest) : t.updates.restarting(latest)}
           </p>
         )}
 
@@ -149,7 +150,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
                 className="quiet inline-flex items-center h-11 px-4 rounded-full border-0 text-[15px] font-medium cursor-pointer"
                 style={{ color: "var(--muted)" }}
               >
-                Omitir esta versión
+                {t.updates.skip}
               </button>
             )}
             <button
@@ -163,7 +164,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
                   : { color: "var(--soft)" }
               }
             >
-              {mode === "updated" ? "Entendido" : info.can_self_update ? "Más tarde" : "Cerrar"}
+              {mode === "updated" ? t.updates.gotIt : info.can_self_update ? t.updates.later : t.common.close}
             </button>
             {mode === "available" && info.can_self_update && (
               <button
@@ -177,7 +178,7 @@ export function UpdateDialog({ info, mode, onClose, onSkip }: UpdateDialogProps)
                   color: "var(--btn-primary-ink)",
                 }}
               >
-                {phase === "error" ? "Reintentar" : "Actualizar ahora"}
+                {phase === "error" ? t.updates.retry : t.updates.updateNow}
               </button>
             )}
           </div>

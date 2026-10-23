@@ -234,6 +234,11 @@ body {
   min-height: 100vh;
 }
 
+/* Mientras se aplica el idioma guardado: evita ver un instante la interfaz en inglés */
+html[data-i18n-pending] body > * {
+  visibility: hidden;
+}
+
 .glass {
   -webkit-backdrop-filter: blur(20px) saturate(165%);
   backdrop-filter: blur(20px) saturate(165%);

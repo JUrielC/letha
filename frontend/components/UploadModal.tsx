@@ -3,27 +3,18 @@
 import React, { useState, useRef, useEffect } from "react";
 import { UploadCloud, X, Loader2, FileText, Check, Play, Pause } from "lucide-react";
 import { api, VoiceItem } from "@/lib/api";
+import { errorMessage, languageName, useI18n } from "@/lib/i18n";
+import { voiceDetails } from "@/lib/voices";
 
 const LANGUAGES = [
-  { code: "es", label: "Español", defaultVoice: "es-MX-DaliaNeural" },
-  { code: "en", label: "English", defaultVoice: "en-US-AvaNeural" },
-  { code: "fr", label: "Français", defaultVoice: "fr-FR-DeniseNeural" },
-  { code: "it", label: "Italiano", defaultVoice: "it-IT-ElsaNeural" },
-  { code: "pt", label: "Português", defaultVoice: "pt-BR-FranciscaNeural" },
+  { code: "es", defaultVoice: "es-MX-DaliaNeural" },
+  { code: "en", defaultVoice: "en-US-AvaNeural" },
+  { code: "fr", defaultVoice: "fr-FR-DeniseNeural" },
+  { code: "it", defaultVoice: "it-IT-ElsaNeural" },
+  { code: "pt", defaultVoice: "pt-BR-FranciscaNeural" },
 ] as const;
 
 type LanguageCode = (typeof LANGUAGES)[number]["code"];
-
-function extractPersona(friendlyName?: string, shortName?: string): string {
-  if (friendlyName) {
-    const parts = friendlyName.split(/\s*[-—]\s*/);
-    if (parts[0]) return parts[0].trim();
-  }
-  if (!shortName) return "Narrador";
-  const parts = shortName.split("-");
-  const last = parts[parts.length - 1] || "";
-  return last.replace("Neural", "");
-}
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -43,6 +34,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const { t, locale } = useI18n();
 
   useEffect(() => {
     if (isOpen && initialFile) {
@@ -97,7 +89,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
         setFile(selected);
         setError(null);
       } else {
-        setError("Por favor selecciona un archivo PDF.");
+        setError(t.upload.pdfOnly);
       }
     }
   };
@@ -109,7 +101,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
         setFile(selected);
         setError(null);
       } else {
-        setError("Por favor selecciona un archivo PDF.");
+        setError(t.upload.pdfOnly);
       }
     }
   };
@@ -152,7 +144,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || "Error al procesar el PDF");
+      setError(errorMessage(err, t, t.upload.failed));
     } finally {
       setLoading(false);
     }
@@ -184,10 +176,10 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
               className="m-0 font-serif text-[28px] leading-[1.2] font-normal"
               style={{ color: "var(--ink)" }}
             >
-              Importar un libro
+              {t.upload.title}
             </h2>
             <p className="m-0 mt-1.5 text-sm" style={{ color: "var(--muted)" }}>
-              Letha saca el texto del PDF, lee su índice y prepara la voz página por página.
+              {t.upload.subtitle}
             </p>
           </div>
 
@@ -195,7 +187,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             type="button"
             onClick={onClose}
             disabled={loading}
-            aria-label="Cerrar"
+            aria-label={t.common.close}
             className="quiet shrink-0 w-10 h-10 -mr-1.5 -mt-1 rounded-full flex items-center justify-center border-0 cursor-pointer"
             style={{
               background: "var(--btn-ghost)",
@@ -241,7 +233,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
               className="quiet h-9 px-3 rounded-full border-0 text-[13px] font-medium cursor-pointer"
               style={{ color: "var(--ink)" }}
             >
-              Cambiar archivo
+              {t.upload.changeFile}
             </button>
             <input
               ref={inputRef}
@@ -273,10 +265,10 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             />
             <UploadCloud className="w-9 h-9 mb-2" strokeWidth={1.5} style={{ color: "var(--soft)" }} />
             <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-              Arrastra tu PDF aquí o haz clic para explorar
+              {t.upload.dropzone}
             </span>
             <span className="text-xs mt-1" style={{ color: "var(--muted)" }}>
-              Archivos .pdf
+              {t.upload.pdfFiles}
             </span>
           </div>
         )}
@@ -284,21 +276,21 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
         {/* 3. Idioma del libro */}
         <fieldset className="m-0 p-0 border-0 min-w-0">
           <legend className="p-0 text-sm font-medium mb-0.5" style={{ color: "var(--ink)" }}>
-            Idioma del libro
+            {t.upload.bookLanguage}
           </legend>
           <p className="m-0 mb-3 text-[13px]" style={{ color: "var(--muted)" }}>
-            Las voces de este libro se limitan a su idioma.
+            {t.upload.bookLanguageHint}
           </p>
           <div
             role="radiogroup"
-            aria-label="Idioma del libro"
+            aria-label={t.upload.bookLanguage}
             className="flex flex-wrap gap-0.5 p-1 rounded-full w-fit max-w-full"
             style={{
               background: "var(--glass-seg)",
               boxShadow: "var(--ring-seg)",
             }}
           >
-            {LANGUAGES.map(({ code, label }) => {
+            {LANGUAGES.map(({ code }) => {
               const active = langFilter === code;
               return (
                 <button
@@ -315,7 +307,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
                     fontWeight: active ? 500 : 400,
                   }}
                 >
-                  {label}
+                  {languageName(code, locale)}
                 </button>
               );
             })}
@@ -325,10 +317,10 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
         {/* 4. Narrador */}
         <fieldset className="m-0 p-0 border-0 min-w-0">
           <legend className="p-0 text-sm font-medium mb-0.5" style={{ color: "var(--ink)" }}>
-            Narrador
+            {t.upload.narrator}
           </legend>
           <p className="m-0 mb-3 text-[13px]" style={{ color: "var(--muted)" }}>
-            Escucha una frase antes de elegir. Puedes cambiarlo luego desde el lector.
+            {t.upload.narratorHint}
           </p>
 
           <div
@@ -341,12 +333,8 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             {filteredVoices.map((v) => {
               const isSelected = selectedVoice === v.short_name;
               const isPlayingNow = previewingVoice === v.short_name;
-              const persona = extractPersona(v.friendly_name, v.short_name);
-              const meta = v.friendly_name.includes(" — ")
-                ? v.friendly_name.split(" — ")[1]
-                : v.friendly_name.includes(" - ")
-                ? v.friendly_name.split(" - ")[1]
-                : v.locale;
+              const persona = v.name;
+              const meta = voiceDetails(v, locale, t);
 
               return (
                 <div
@@ -386,7 +374,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
                       handlePreviewVoice(v.short_name);
                     }}
                     disabled={loading}
-                    aria-label={`${isPlayingNow ? "Detener" : "Escuchar"} muestra de ${persona}`}
+                    aria-label={isPlayingNow ? t.upload.stopSample(persona) : t.upload.playSample(persona)}
                     className="quiet inline-flex items-center gap-2 h-9 px-3.5 pl-1.5 rounded-full border-0 text-[13px] font-medium cursor-pointer"
                     style={{
                       background: "transparent",
@@ -406,7 +394,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
                         <Play className="w-3 h-3 fill-current ml-0.5" />
                       )}
                     </span>
-                    <span>{isPlayingNow ? "Detener" : "Escuchar"}</span>
+                    <span>{isPlayingNow ? t.common.stop : t.common.listen}</span>
                   </button>
                 </div>
               );
@@ -432,7 +420,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
         {/* 6. Pie */}
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <p className="flex-1 min-w-[200px] m-0 text-[13px]" style={{ color: "var(--muted)" }}>
-            La voz se genera con Edge TTS y necesita conexión.
+            {t.upload.connectionNote}
           </p>
           <button
             type="button"
@@ -441,7 +429,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             className="quiet inline-flex items-center h-11 px-4 rounded-full border-0 text-[15px] font-medium cursor-pointer"
             style={{ color: "var(--soft)" }}
           >
-            Cancelar
+            {t.common.cancel}
           </button>
           <button
             type="button"
@@ -459,7 +447,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
             ) : (
               <Check className="w-4 h-4" strokeWidth={2} />
             )}
-            <span>{loading ? "Analizando PDF..." : "Importar"}</span>
+            <span>{loading ? t.upload.analyzing : t.upload.import}</span>
           </button>
         </div>
       </div>

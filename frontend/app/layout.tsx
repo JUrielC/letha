@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Sans, Literata } from "next/font/google";
 import "./globals.css";
+import { I18nProvider } from "@/lib/i18n";
 import { KeepAlive } from "@/components/KeepAlive";
 import { NativeLanguageGate } from "@/components/NativeLanguageGate";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
@@ -21,8 +22,8 @@ const literata = Literata({
 });
 
 export const metadata: Metadata = {
-  title: "Letha — Lector y Audiolibro Sincronizado",
-  description: "Lee tus libros en PDF mientras los escuchas con voces neurales sincronizadas",
+  title: "Letha — Synchronized reader and audiobook",
+  description: "Read your PDF books while you listen to them with synchronized neural voices",
 };
 
 export default function RootLayout({
@@ -32,7 +33,7 @@ export default function RootLayout({
 }) {
   return (
     <html
-      lang="es"
+      lang="en"
       suppressHydrationWarning
       className={`${instrumentSans.variable} ${literata.variable}`}
     >
@@ -49,6 +50,14 @@ export default function RootLayout({
                   document.body.classList.add('theme-sepia');
                 }
               } catch (e) {}
+              try {
+                var l = localStorage.getItem('letha_ui_language');
+                if (l && l !== 'en') {
+                  document.documentElement.lang = l;
+                  document.documentElement.setAttribute('data-i18n-pending', '');
+                  setTimeout(function () { document.documentElement.removeAttribute('data-i18n-pending'); }, 3000);
+                }
+              } catch (e) {}
             `,
           }}
         />
@@ -57,10 +66,12 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-screen transition-colors duration-200 font-sans"
       >
-        <KeepAlive />
-        {children}
-        <NativeLanguageGate />
-        <UpdateNotifier />
+        <I18nProvider>
+          <KeepAlive />
+          {children}
+          <NativeLanguageGate />
+          <UpdateNotifier />
+        </I18nProvider>
       </body>
     </html>
   );

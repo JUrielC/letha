@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sparkles, X } from "lucide-react";
 import { api, UpdateInfo } from "@/lib/api";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { useI18n } from "@/lib/i18n";
 
 const DISMISSED_KEY = "letha_update_dismissed";
 
@@ -13,6 +14,7 @@ export function UpdateNotifier() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [hidden, setHidden] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { t } = useI18n();
 
   useEffect(() => {
     api
@@ -61,8 +63,8 @@ export function UpdateNotifier() {
         <Sparkles className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} />
         <span className="text-sm truncate">
           {mode === "updated"
-            ? `Letha se actualizó a la versión ${info.current_version}`
-            : `Hay una versión nueva: Letha ${info.latest_version}`}
+            ? t.updates.updatedTo(info.current_version)
+            : t.updates.newVersion(info.latest_version ?? "")}
         </span>
         <button
           type="button"
@@ -70,12 +72,12 @@ export function UpdateNotifier() {
           className="glbtn shrink-0 inline-flex items-center h-9 px-3.5 rounded-full border-0 text-sm font-medium cursor-pointer"
           style={{ background: "var(--btn-primary)", color: "var(--btn-primary-ink)" }}
         >
-          Ver novedades
+          {t.updates.seeWhatsNew}
         </button>
         <button
           type="button"
           onClick={dismiss}
-          aria-label="Cerrar aviso"
+          aria-label={t.updates.dismiss}
           className="quiet shrink-0 w-9 h-9 rounded-full flex items-center justify-center border-0 cursor-pointer"
           style={{ background: "transparent", color: "var(--muted)" }}
         >

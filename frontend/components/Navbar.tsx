@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Plus, Moon, Sun, Coffee } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/useTheme";
 
 interface NavbarProps {
@@ -13,6 +14,7 @@ interface NavbarProps {
 export function Navbar({ onOpenUpload }: NavbarProps) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const isSettingsPage = pathname?.startsWith("/settings");
 
   return (
@@ -38,7 +40,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
           <span>Letha</span>
         </Link>
 
-        <nav aria-label="Navegación principal" className="flex items-center gap-1 flex-1 min-w-0">
+        <nav aria-label={t.nav.main} className="flex items-center gap-1 flex-1 min-w-0">
           <Link
             href="/"
             aria-current={!isSettingsPage ? "page" : undefined}
@@ -51,7 +53,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               color: !isSettingsPage ? "var(--ink)" : "var(--muted)",
             }}
           >
-            Biblioteca
+            {t.nav.library}
           </Link>
           <Link
             href="/settings"
@@ -65,14 +67,14 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               color: isSettingsPage ? "var(--ink)" : "var(--muted)",
             }}
           >
-            Configuración
+            {t.nav.settings}
           </Link>
         </nav>
 
         <div className="flex items-center gap-3">
           <div
             role="radiogroup"
-            aria-label="Tema"
+            aria-label={t.nav.theme}
             className="flex items-center gap-0.5 p-[3px] rounded-full"
             style={{
               background: "var(--glass-seg)",
@@ -83,8 +85,8 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               type="button"
               role="radio"
               aria-checked={theme === "light"}
-              aria-label="Tema claro"
-              title="Tema claro"
+              aria-label={t.themes.lightTheme}
+              title={t.themes.lightTheme}
               onClick={() => setTheme("light")}
               className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
               style={{
@@ -99,8 +101,8 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               type="button"
               role="radio"
               aria-checked={theme === "sepia"}
-              aria-label="Tema sepia"
-              title="Tema sepia"
+              aria-label={t.themes.sepiaTheme}
+              title={t.themes.sepiaTheme}
               onClick={() => setTheme("sepia")}
               className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
               style={{
@@ -115,8 +117,8 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               type="button"
               role="radio"
               aria-checked={theme === "dark"}
-              aria-label="Tema oscuro"
-              title="Tema oscuro"
+              aria-label={t.themes.darkTheme}
+              title={t.themes.darkTheme}
               onClick={() => setTheme("dark")}
               className="quiet w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer border-0"
               style={{
@@ -141,7 +143,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
               }}
             >
               <Plus className="w-4 h-4" strokeWidth={1.8} />
-              <span>Importar PDF</span>
+              <span>{t.nav.importPdf}</span>
             </button>
           )}
         </div>

@@ -71,52 +71,6 @@ def voice_language(voice: str) -> str:
     return voice.split("-")[0].lower()
 
 
-LOCALE_LABELS = {
-    "es-MX": "Español (México)",
-    "es-ES": "Español (España)",
-    "es-AR": "Español (Argentina)",
-    "es-CO": "Español (Colombia)",
-    "es-CL": "Español (Chile)",
-    "es-PE": "Español (Perú)",
-    "es-VE": "Español (Venezuela)",
-    "es-UY": "Español (Uruguay)",
-    "es-EC": "Español (Ecuador)",
-    "es-CR": "Español (Costa Rica)",
-    "es-PA": "Español (Panamá)",
-    "es-DO": "Español (Rep. Dominicana)",
-    "es-GT": "Español (Guatemala)",
-    "es-HN": "Español (Honduras)",
-    "es-NI": "Español (Nicaragua)",
-    "es-PR": "Español (Puerto Rico)",
-    "es-PY": "Español (Paraguay)",
-    "es-SV": "Español (El Salvador)",
-    "es-BO": "Español (Bolivia)",
-    "es-CU": "Español (Cuba)",
-    "es-GQ": "Español (Guinea Ecuatorial)",
-    "es-US": "Español (EE.UU.)",
-    "en-US": "Inglés (EE.UU.)",
-    "en-GB": "Inglés (Reino Unido)",
-    "en-AU": "Inglés (Australia)",
-    "en-CA": "Inglés (Canadá)",
-    "en-IE": "Inglés (Irlanda)",
-    "en-IN": "Inglés (India)",
-    "en-NZ": "Inglés (Nueva Zelanda)",
-    "en-ZA": "Inglés (Sudáfrica)",
-    "en-SG": "Inglés (Singapur)",
-    "en-HK": "Inglés (Hong Kong)",
-    "en-PH": "Inglés (Filipinas)",
-    "en-KE": "Inglés (Kenia)",
-    "en-NG": "Inglés (Nigeria)",
-    "en-TZ": "Inglés (Tanzania)",
-    "fr-FR": "Francés (Francia)",
-    "fr-CA": "Francés (Canadá)",
-    "fr-BE": "Francés (Bélgica)",
-    "fr-CH": "Francés (Suiza)",
-    "it-IT": "Italiano (Italia)",
-    "pt-BR": "Portugués (Brasil)",
-    "pt-PT": "Portugués (Portugal)",
-}
-
 
 def _extract_persona_name(short_name: str) -> str:
     parts = short_name.split("-")
@@ -127,8 +81,8 @@ def _extract_persona_name(short_name: str) -> str:
 
 async def list_available_voices() -> List[Dict[str, str]]:
     """
-    Lista las voces neurales de edge-tts de los idiomas soportados con nombres legibles
-    de persona, idioma y género.
+    Lista las voces neurales de edge-tts de los idiomas soportados con el nombre de su persona;
+    la interfaz arma la etiqueta de idioma y género en el idioma de la app.
     """
     voices = await edge_tts.list_voices()
     formatted = []
@@ -137,18 +91,12 @@ async def list_available_voices() -> List[Dict[str, str]]:
         locale = v.get("Locale", "")
         if voice_language(locale) not in SUPPORTED_LANGUAGES:
             continue
-        gender = v.get("Gender", "")
-        persona = _extract_persona_name(short_name)
-        lang_label = LOCALE_LABELS.get(locale, locale)
-        gender_label = "Mujer" if gender == "Female" else "Hombre" if gender == "Male" else gender
-        friendly_name = f"{persona} — {lang_label} · {gender_label}"
         formatted.append(
             {
-                "name": persona,
+                "name": _extract_persona_name(short_name),
                 "short_name": short_name,
-                "gender": gender,
+                "gender": v.get("Gender", ""),
                 "locale": locale,
-                "friendly_name": friendly_name,
             }
         )
 

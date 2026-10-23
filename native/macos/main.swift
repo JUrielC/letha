@@ -42,9 +42,89 @@ private var savedThemeStyle: ThemeStyle {
     themeStyles[UserDefaults.standard.string(forKey: themeDefaultsKey) ?? ""] ?? themeStyles["light"]!
 }
 
+private let languageDefaultsKey = "uiLanguage"
+
+private struct NativeStrings {
+    let starting: String
+    let about: String
+    let hide: String
+    let hideOthers: String
+    let showAll: String
+    let quit: String
+    let startErrorTitle: String
+    let launchFailed: String
+    let serverStopped: String
+}
+
+// La interfaz envía su idioma con el mensaje lethaLanguage; estas pantallas se muestran antes de que cargue
+private let nativeStrings: [String: NativeStrings] = [
+    "en": NativeStrings(
+        starting: "Starting Letha…",
+        about: "About Letha",
+        hide: "Hide Letha",
+        hideOthers: "Hide Others",
+        showAll: "Show All",
+        quit: "Quit Letha",
+        startErrorTitle: "Letha couldn’t start",
+        launchFailed: "Letha couldn’t be launched:",
+        serverStopped: "The Letha server stopped unexpectedly.\nCheck the log at ~/Library/Logs/letha.log."
+    ),
+    "es": NativeStrings(
+        starting: "Iniciando Letha…",
+        about: "Acerca de Letha",
+        hide: "Ocultar Letha",
+        hideOthers: "Ocultar otros",
+        showAll: "Mostrar todo",
+        quit: "Salir de Letha",
+        startErrorTitle: "Error al iniciar Letha",
+        launchFailed: "No se pudo arrancar Letha:",
+        serverStopped: "El servidor de Letha se detuvo inesperadamente.\nRevisa el log en ~/Library/Logs/letha.log."
+    ),
+    "fr": NativeStrings(
+        starting: "Démarrage de Letha…",
+        about: "À propos de Letha",
+        hide: "Masquer Letha",
+        hideOthers: "Masquer les autres",
+        showAll: "Tout afficher",
+        quit: "Quitter Letha",
+        startErrorTitle: "Letha n’a pas pu démarrer",
+        launchFailed: "Impossible de lancer Letha :",
+        serverStopped: "Le serveur de Letha s’est arrêté de façon inattendue.\nConsultez le journal dans ~/Library/Logs/letha.log."
+    ),
+    "it": NativeStrings(
+        starting: "Avvio di Letha…",
+        about: "Informazioni su Letha",
+        hide: "Nascondi Letha",
+        hideOthers: "Nascondi altre",
+        showAll: "Mostra tutte",
+        quit: "Esci da Letha",
+        startErrorTitle: "Impossibile avviare Letha",
+        launchFailed: "Non è stato possibile avviare Letha:",
+        serverStopped: "Il server di Letha si è arrestato in modo imprevisto.\nControlla il log in ~/Library/Logs/letha.log."
+    ),
+    "pt": NativeStrings(
+        starting: "Iniciando o Letha…",
+        about: "Sobre o Letha",
+        hide: "Ocultar Letha",
+        hideOthers: "Ocultar Outros",
+        showAll: "Mostrar Tudo",
+        quit: "Encerrar Letha",
+        startErrorTitle: "Não foi possível iniciar o Letha",
+        launchFailed: "Não foi possível abrir o Letha:",
+        serverStopped: "O servidor do Letha parou inesperadamente.\nVeja o log em ~/Library/Logs/letha.log."
+    ),
+]
+
+private var savedLanguage: String {
+    let language = UserDefaults.standard.string(forKey: languageDefaultsKey) ?? ""
+    return nativeStrings[language] != nil ? language : "en"
+}
+
+private var strings: NativeStrings { nativeStrings[savedLanguage]! }
+
 func loadingPageHTML(_ content: String) -> String {
     """
-    <!doctype html><html><head><meta charset="utf-8"><style>
+    <!doctype html><html lang="\(savedLanguage)"><head><meta charset="utf-8"><style>
     :root{\(savedThemeStyle.css)}
     body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background-color:var(--base);background-image:var(--ambient);color:var(--ink);font-family:-apple-system,system-ui;-webkit-font-smoothing:antialiased}
     .brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:600;letter-spacing:-0.01em}
@@ -79,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            let url = URL(string: arg) {
             open(url)
         } else {
-            showStatus("Iniciando Letha...")
+            showStatus(strings.starting)
             startServer()
         }
     }
@@ -128,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.userContentController.add(self, name: "lethaTheme")
+        config.userContentController.add(self, name: "lethaLanguage")
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.uiDelegate = self
@@ -148,31 +229,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenu = NSMenu()
         appMenu.addItem(
-            withTitle: "Acerca de Letha",
+            withTitle: strings.about,
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
-            withTitle: "Ocultar Letha",
+            withTitle: strings.hide,
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         )
         let hideOthers = NSMenuItem(
-            title: "Ocultar otros",
+            title: strings.hideOthers,
             action: #selector(NSApplication.hideOtherApplications(_:)),
             keyEquivalent: "h"
         )
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthers)
         appMenu.addItem(
-            withTitle: "Mostrar todo",
+            withTitle: strings.showAll,
             action: #selector(NSApplication.unhideAllApplications(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
-            withTitle: "Salir de Letha",
+            withTitle: strings.quit,
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -211,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server = proc
             ownsServer = true
         } catch {
-            showError("No se pudo arrancar Letha:\n\n\(error.localizedDescription)")
+            showError("\(strings.launchFailed)\n\n\(error.localizedDescription)")
         }
     }
 
@@ -243,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log("El servidor terminó inesperadamente (código \(p.terminationStatus))")
-        showError("El servidor de Letha se detuvo inesperadamente.\nRevisa el log en ~/Library/Logs/letha.log.")
+        showError(strings.serverStopped)
     }
 
     private func open(_ url: URL) {
@@ -265,7 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showPage("""
         \(brandHTML)
         <div class="card">
-          <h2>Error al iniciar Letha</h2>
+          <h2>\(strings.startErrorTitle)</h2>
           <div class="muted">\(escaped)</div>
         </div>
         """)
@@ -331,8 +412,13 @@ extension AppDelegate: WKScriptMessageHandler {
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        guard let theme = message.body as? String, themeStyles[theme] != nil else { return }
-        UserDefaults.standard.set(theme, forKey: themeDefaultsKey)
+        guard let value = message.body as? String else { return }
+        if message.name == "lethaTheme", themeStyles[value] != nil {
+            UserDefaults.standard.set(value, forKey: themeDefaultsKey)
+        } else if message.name == "lethaLanguage", nativeStrings[value] != nil, value != savedLanguage {
+            UserDefaults.standard.set(value, forKey: languageDefaultsKey)
+            buildMenu()
+        }
     }
 }
 

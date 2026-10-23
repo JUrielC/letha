@@ -168,7 +168,7 @@ def test_rejects_scanned_pdf_without_text():
     files = {"file": ("escaneado.pdf", io.BytesIO(blank_bytes), "application/pdf")}
     res = client.post("/api/books/upload", files=files)
     assert res.status_code == 400
-    assert "texto extraíble" in res.json()["detail"]
+    assert res.json()["detail"]["code"] == "pdf_without_text"
     assert list(config.BOOKS_DIR.glob("*.pdf")) == []
     assert list(config.COVERS_DIR.glob("*.png")) == []
 
@@ -226,7 +226,8 @@ def test_voices_limited_to_supported_languages(monkeypatch):
         "pt-BR-FranciscaNeural",
     ]
     sylvie = next(v for v in voices if v["short_name"] == "fr-CA-SylvieNeural")
-    assert "Francés (Canadá)" in sylvie["friendly_name"]
+    assert sylvie["name"] == "Sylvie"
+    assert sylvie["locale"] == "fr-CA"
 
 
 def test_voice_preview_speaks_the_voice_language(monkeypatch):
@@ -683,6 +684,29 @@ def fake_release(version="9.9.9", assets=None):
     }
 
 
+def test_existing_page_titles_keep_only_their_section():
+    """Verifica que los títulos guardados como 'Página N' o 'Pág. N — Sección' queden solo con la sección."""
+    database.init_db()
+    with database.get_connection() as conn:
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, total_pages, total_chapters, created_at, last_read_at, voice, language) "
+            "VALUES ('libro', 'Libro', 'Autor', 'libro.pdf', 3, 3, 0, 0, 'es-MX-DaliaNeural', 'es')"
+        )
+        for idx, title in enumerate(["Página 1", "Pág. 2 — Capítulo 1 — El inicio", "Página 3 bis"]):
+            conn.execute(
+                "INSERT INTO chapters (id, book_id, idx, title, start_page, end_page, text_content, sentences_json) "
+                "VALUES (?, 'libro', ?, ?, ?, ?, 'Texto.', '[]')",
+                (f"libro_c{idx}", idx, title, idx + 1, idx + 1),
+            )
+        conn.execute("DELETE FROM app_settings WHERE key = 'page_titles_localized'")
+        conn.commit()
+
+    database.init_db()
+    database.init_db()
+    titles = [c.title for c in database.get_book("libro").chapters]
+    assert titles == ["", "Capítulo 1 — El inicio", "Página 3 bis"]
+
+
 def test_update_check_reports_new_version_and_caches_it(monkeypatch):
     from letha import __version__
     from letha.services import updates as updates_service
@@ -739,7 +763,7 @@ def test_update_check_without_releases_or_connection(monkeypatch):
         raise OSError("sin red")
 
     monkeypatch.setattr(updates_service, "fetch_latest_release", offline)
-    assert "conexión" in client.get("/api/updates?force=true").json()["error"]
+    assert client.get("/api/updates?force=true").json()["error"] == "check_failed"
 
 
 def test_manifest_from_release_script_is_installable(monkeypatch, tmp_path):
@@ -822,7 +846,7 @@ def test_install_update_refused_outside_installed_app():
     database.init_db()
     res = TestClient(api.app).post("/api/updates/install")
     assert res.status_code == 409
-    assert "git pull" in res.json()["detail"]
+    assert res.json()["detail"]["code"] == "not_installer_copy"
 
 
 def test_install_update_verifies_downloads_and_launches_updater(monkeypatch, tmp_path):
@@ -854,7 +878,7 @@ def test_install_update_verifies_downloads_and_launches_updater(monkeypatch, tmp
     assets[installer_name]["sha256"] = "0" * 64
     res_tampered = client.post("/api/updates/install")
     assert res_tampered.status_code == 409
-    assert "huella" in res_tampered.json()["detail"]
+    assert res_tampered.json()["detail"]["code"] == "checksum_mismatch"
     assert len(launched) == 1
 
 
@@ -907,8 +931,9 @@ def test_native_language_starts_unset_and_is_validated():
     assert client.get("/api/settings").json()["native_language"] == "es"
 
     languages = client.get("/api/translation/languages").json()
+    assert [language["code"] for language in languages] == ["es", "en", "fr", "it", "pt"]
     assert {"code": "es", "name": "Español"} in languages
-    assert {"code": "ja", "name": "日本語"} in languages
+    assert client.put("/api/settings", json={"native_language": "de"}).status_code == 400
 
 
 def test_translation_falls_back_to_next_provider_and_caches(monkeypatch):
@@ -956,16 +981,16 @@ def test_providers_parse_real_response_shapes(monkeypatch):
         requests.append((url, body, content_type))
         if "microsoft" in url:
             return [{"translations": [{"text": "Hola.", "to": "es"}]}, {"translations": [{"text": "Adiós.", "to": "es"}]}]
-        return [["你好。", "en"], "再见。"]
+        return [["Olá.", "en"], "Tchau."]
 
     monkeypatch.setattr(translation_service, "_post_json", fake_post)
     assert translation_service.MicrosoftProvider().translate(["Hello.", "Bye."], "en", "es") == ["Hola.", "Adiós."]
-    assert translation_service.GoogleProvider().translate(["Hello.", "Bye."], "en", "zh") == ["你好。", "再见。"]
+    assert translation_service.GoogleProvider().translate(["Hello.", "Bye."], "en", "pt") == ["Olá.", "Tchau."]
 
     ms_url, ms_body, _ = requests[0]
     assert "from=en&to=es" in ms_url and json.loads(ms_body) == ["Hello.", "Bye."]
     google_url, google_body, _ = requests[1]
-    assert "tl=zh-CN" in google_url and google_body == b"q=Hello.&q=Bye."
+    assert "sl=en&tl=pt" in google_url and google_body == b"q=Hello.&q=Bye."
 
 
 def test_chapter_translations_endpoint(monkeypatch):

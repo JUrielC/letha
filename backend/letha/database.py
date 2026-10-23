@@ -135,6 +135,7 @@ def init_db():
         _migrate_paragraph_breaks(conn)
         _migrate_reassemble_existing_books(conn)
         _migrate_book_languages(conn)
+        _migrate_page_titles(conn)
         conn.commit()
 
 
@@ -379,6 +380,22 @@ def _migrate_book_languages(conn: sqlite3.Connection) -> None:
 
     if not already_detected:
         conn.execute("INSERT INTO app_settings (key, value) VALUES ('book_languages_detected', '1')")
+
+
+def _migrate_page_titles(conn: sqlite3.Connection) -> None:
+    """
+    Quita de los títulos guardados el número de página en español ('Página 3', 'Pág. 3 — Sección')
+    y deja solo la sección, porque la interfaz lo antepone en su idioma. Se ejecuta una sola vez.
+    """
+    if conn.execute("SELECT 1 FROM app_settings WHERE key = 'page_titles_localized'").fetchone():
+        return
+    conn.execute(
+        "UPDATE chapters SET title = '' WHERE title GLOB 'Página [0-9]*' AND title NOT GLOB 'Página *[^0-9]*'"
+    )
+    conn.execute(
+        "UPDATE chapters SET title = substr(title, instr(title, ' — ') + 3) WHERE title GLOB 'Pág. [0-9]* — *'"
+    )
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('page_titles_localized', '1')")
 
 
 def _migrate_paragraph_breaks(conn: sqlite3.Connection) -> None:

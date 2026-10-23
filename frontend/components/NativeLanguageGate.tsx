@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, TranslationLanguage } from "@/lib/api";
 import { LanguagePicker } from "@/components/LanguagePicker";
+import { errorMessage, resolveLocale, UI_MESSAGES } from "@/lib/i18n";
 import { announceNativeLanguage, suggestNativeLanguage } from "@/lib/nativeLanguage";
 
 export function NativeLanguageGate() {
@@ -26,6 +27,8 @@ export function NativeLanguageGate() {
 
   if (!languages) return null;
 
+  const preview = UI_MESSAGES[resolveLocale(selected)];
+
   const save = async () => {
     if (!selected) return;
     setSaving(true);
@@ -35,7 +38,7 @@ export function NativeLanguageGate() {
       announceNativeLanguage(selected);
       setLanguages(null);
     } catch (err: any) {
-      setError(err.message || "No se pudo guardar tu idioma.");
+      setError(errorMessage(err, preview, preview.nativeLanguage.saveFailed));
     } finally {
       setSaving(false);
     }
@@ -47,6 +50,7 @@ export function NativeLanguageGate() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="native-language-title"
+      lang={resolveLocale(selected)}
       className="fixed inset-0 z-[60] flex items-center justify-center p-4 overflow-y-auto"
       style={{
         background: "var(--scrim)",
@@ -64,10 +68,10 @@ export function NativeLanguageGate() {
             className="m-0 font-serif text-[28px] leading-[1.2] font-normal"
             style={{ color: "var(--ink)" }}
           >
-            ¿Cuál es tu idioma nativo?
+            {preview.nativeLanguage.title}
           </h2>
           <p className="m-0 mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-            Letha traducirá a este idioma lo que leas y escuches. Puedes cambiarlo cuando quieras en Configuración.
+            {preview.nativeLanguage.body}
           </p>
         </div>
 
@@ -91,7 +95,7 @@ export function NativeLanguageGate() {
               color: "var(--btn-primary-ink)",
             }}
           >
-            {saving ? "Guardando…" : "Continuar"}
+            {saving ? preview.common.saving : preview.nativeLanguage.continue}
           </button>
         </div>
       </div>

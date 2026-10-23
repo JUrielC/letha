@@ -86,7 +86,6 @@ class VoiceItem(BaseModel):
     short_name: str
     gender: str
     locale: str
-    friendly_name: str
 
 
 class AppSettings(BaseModel):

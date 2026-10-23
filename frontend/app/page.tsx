@@ -11,6 +11,8 @@ import {
   VoiceItem,
   getBaseUrl,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { personaName } from "@/lib/voices";
 import {
   BookOpen,
   Loader2,
@@ -40,17 +42,6 @@ function pickCoverPalette(id: string) {
   return COVER_PALETTES[sum % COVER_PALETTES.length];
 }
 
-function extractPersona(friendlyName?: string, shortName?: string): string {
-  if (friendlyName) {
-    const parts = friendlyName.split(/\s*[—-]\s*/);
-    if (parts[0]) return parts[0].trim();
-  }
-  if (!shortName) return "Narrador";
-  const parts = shortName.split("-");
-  const last = parts[parts.length - 1] || "";
-  return last.replace("Neural", "");
-}
-
 function isStarted(b: BookSummary): boolean {
   return b.current_chapter_idx > 0 || b.current_sentence_idx > 0;
 }
@@ -73,6 +64,7 @@ export default function HomePage() {
   const [query, setQuery] = useState("");
   const [continueSentenceText, setContinueSentenceText] = useState<string | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const { t, locale } = useI18n();
 
   const loadBooks = async () => {
     try {
@@ -151,8 +143,7 @@ export default function HomePage() {
 
   const continueInfo = continueBook ? pageInfo(continueBook) : null;
   const continuePalette = continueBook ? pickCoverPalette(continueBook.id) : null;
-  const continueVoice = voices.find((v) => v.short_name === continueBook?.voice);
-  const continuePersona = extractPersona(continueVoice?.friendly_name, continueBook?.voice);
+  const continuePersona = personaName(continueBook?.voice, voices, t);
 
   const otherInProgress = useMemo(() => {
     if (!continueBook) return books.filter(isStarted).slice(0, 2);
@@ -196,9 +187,9 @@ export default function HomePage() {
   };
 
   const filterTabs: { key: FilterKey; label: string; count: number }[] = [
-    { key: "all", label: "Todos", count: counts.all },
-    { key: "inprogress", label: "En curso", count: counts.inprogress },
-    { key: "notstarted", label: "Sin empezar", count: counts.notstarted },
+    { key: "all", label: t.library.filterAll, count: counts.all },
+    { key: "inprogress", label: t.library.filterInProgress, count: counts.inprogress },
+    { key: "notstarted", label: t.library.filterNotStarted, count: counts.notstarted },
   ];
 
   return (
@@ -218,11 +209,11 @@ export default function HomePage() {
               style={{ color: "var(--ink)" }}
             >
               {continueBook && continueInfo
-                ? `Ibas por la página ${continueInfo.current} de ${continueBook.title}.`
-                : "Tu biblioteca"}
+                ? t.library.resumeTitle(continueInfo.current, continueBook.title)
+                : t.library.title}
             </h1>
             <p className="m-0 mt-3.5 text-base" style={{ color: "var(--muted)" }}>
-              Lee tus libros o escúchalos narrados con voces neurales sincronizadas palabra por palabra.
+              {t.library.subtitle}
             </p>
           </div>
 
@@ -236,7 +227,7 @@ export default function HomePage() {
               }}
             >
               <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
-              <span>Motor Neural Edge-TTS</span>
+              <span>{t.library.engine}</span>
             </span>
 
             <dl
@@ -248,7 +239,7 @@ export default function HomePage() {
             >
               <div className="px-5 py-2.5">
                 <dt className="text-xs font-medium" style={{ color: "var(--muted)" }}>
-                  Libros
+                  {t.library.books}
                 </dt>
                 <dd className="m-0 mt-0.5 text-[22px] leading-[1.2] font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
                   {books.length}
@@ -259,10 +250,10 @@ export default function HomePage() {
                 style={{ boxShadow: "inset 1px 0 0 var(--track)" }}
               >
                 <dt className="text-xs font-medium" style={{ color: "var(--muted)" }}>
-                  Páginas
+                  {t.library.pages}
                 </dt>
                 <dd className="m-0 mt-0.5 text-[22px] leading-[1.2] font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
-                  {totalPages.toLocaleString("es-MX")}
+                  {totalPages.toLocaleString(locale)}
                 </dd>
               </div>
             </dl>
@@ -272,7 +263,7 @@ export default function HomePage() {
         {/* Continuar escuchando */}
         {continueBook && continueInfo && continuePalette && (
           <section
-            aria-label="Continuar escuchando"
+            aria-label={t.library.continueListening}
             className="animate-rise-gradient glass-strong rounded-[30px] p-8 flex flex-wrap gap-9 items-stretch mt-4 mb-16"
             style={{
               background: "var(--glass-panel)",
@@ -287,7 +278,7 @@ export default function HomePage() {
                 color: continuePalette.ink,
                 boxShadow: "var(--shadow-hero-cover)",
               }}
-              aria-label={`Abrir ${continueBook.title}`}
+              aria-label={t.library.open(continueBook.title)}
             >
               {continueBook.cover_url ? (
                 <img
@@ -298,7 +289,7 @@ export default function HomePage() {
               ) : (
                 <>
                   <span className="text-[11px] font-medium tracking-[0.01em] line-clamp-1">
-                    {continueBook.author || "Autor desconocido"}
+                    {continueBook.author || t.common.unknownAuthor}
                   </span>
                   <span className="font-serif text-[24px] leading-[1.12] line-clamp-4">
                     {continueBook.title}
@@ -321,14 +312,14 @@ export default function HomePage() {
                   {continueBook.title}
                 </h2>
                 <p className="m-0 mt-0.5 text-sm" style={{ color: "var(--muted)" }}>
-                  {continueBook.author} · narra {continuePersona}
+                  {continueBook.author || t.common.unknownAuthor} · {t.library.narratedBy(continuePersona)}
                 </p>
               </div>
 
               {continueSentenceText && (
                 <figure className="m-0">
                   <figcaption className="text-[13px]" style={{ color: "var(--muted)" }}>
-                    Te quedaste aquí
+                    {t.library.leftOff}
                   </figcaption>
                   <blockquote className="m-0 mt-2 font-serif text-[23px] leading-[1.6] max-w-[640px]">
                     <span
@@ -363,7 +354,7 @@ export default function HomePage() {
                   >
                     <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                   </span>
-                  <span>Reanudar en pág. {continueInfo.current}</span>
+                  <span>{t.library.resumeAt(continueInfo.current)}</span>
                 </Link>
 
                 <Link
@@ -376,13 +367,13 @@ export default function HomePage() {
                   }}
                 >
                   <BookOpen className="w-[17px] h-[17px]" strokeWidth={1.6} />
-                  <span>Abrir lector</span>
+                  <span>{t.library.openReader}</span>
                 </Link>
 
                 <div className="flex-1 min-w-[160px] flex flex-col gap-1.5">
                   <div
                     role="progressbar"
-                    aria-label={`Progreso de ${continueBook.title}`}
+                    aria-label={t.library.progressOf(continueBook.title)}
                     aria-valuenow={continueInfo.pct}
                     aria-valuemin={0}
                     aria-valuemax={100}
@@ -395,7 +386,7 @@ export default function HomePage() {
                     />
                   </div>
                   <span className="text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>
-                    Pág. {continueInfo.current} de {continueInfo.total} · {continueInfo.pct}%
+                    {t.common.pageOf(continueInfo.current, continueInfo.total)} · {continueInfo.pct}%
                   </span>
                 </div>
               </div>
@@ -403,7 +394,7 @@ export default function HomePage() {
 
             {otherInProgress.length > 0 && (
               <aside
-                aria-label="También en curso"
+                aria-label={t.library.alsoInProgress}
                 className="shrink-0 w-[260px] max-w-full flex flex-col gap-1 p-4 rounded-[22px]"
                 style={{
                   background: "var(--glass-sub)",
@@ -411,7 +402,7 @@ export default function HomePage() {
                 }}
               >
                 <h3 className="m-0 mx-1 mb-2 text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                  También en curso
+                  {t.library.alsoInProgress}
                 </h3>
                 {otherInProgress.map((b) => {
                   const bInfo = pageInfo(b);
@@ -460,7 +451,7 @@ export default function HomePage() {
                           />
                         </div>
                         <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
-                          Pág. {bInfo.current} de {bInfo.total} · {bInfo.pct}%
+                          {t.common.pageOf(bInfo.current, bInfo.total)} · {bInfo.pct}%
                         </span>
                       </div>
                     </Link>
@@ -479,13 +470,13 @@ export default function HomePage() {
               className="m-0 font-serif text-[30px] leading-[1.2] font-normal tracking-[-0.01em]"
               style={{ color: "var(--ink)" }}
             >
-              Todos los libros
+              {t.library.allBooks}
             </h2>
 
             <div className="flex flex-wrap items-center gap-3">
               <div
                 role="tablist"
-                aria-label="Filtrar libros"
+                aria-label={t.library.filterBooks}
                 className="glass flex gap-0.5 p-1 rounded-full"
                 style={{
                   background: "var(--glass-seg)",
@@ -517,7 +508,7 @@ export default function HomePage() {
 
               <div className="relative w-[260px] max-w-full">
                 <label htmlFor="search-books" className="sr-only">
-                  Buscar libros
+                  {t.library.searchBooks}
                 </label>
                 <Search
                   className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -529,7 +520,7 @@ export default function HomePage() {
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar por título o autor"
+                  placeholder={t.library.searchPlaceholder}
                   className="glass w-full h-[42px] pl-10 pr-3.5 rounded-full border-0 text-sm focus:outline-none"
                   style={{
                     background: "var(--glass-seg)",
@@ -544,7 +535,7 @@ export default function HomePage() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 gap-3" style={{ color: "var(--muted)" }}>
               <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--muted)" }} />
-              <span className="text-sm">Cargando biblioteca...</span>
+              <span className="text-sm">{t.library.loading}</span>
             </div>
           ) : (
             <div
@@ -573,7 +564,7 @@ export default function HomePage() {
               <div
                 role="button"
                 tabIndex={0}
-                aria-label="Añadir un libro: arrastra un PDF aquí o haz clic para elegirlo"
+                aria-label={`${t.library.addBook}: ${t.library.addBookHint}`}
                 onClick={() => addInputRef.current?.click()}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -604,10 +595,10 @@ export default function HomePage() {
                 />
                 <Plus className="w-7 h-7" strokeWidth={1.5} />
                 <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-                  Añadir un libro
+                  {t.library.addBook}
                 </span>
                 <span className="text-[13px] leading-[1.4]">
-                  Arrastra un PDF aquí o haz clic para elegirlo
+                  {t.library.addBookHint}
                 </span>
               </div>
             </div>
@@ -615,7 +606,7 @@ export default function HomePage() {
 
           {!loading && filteredBooks.length === 0 && books.length > 0 && (
             <p className="text-sm mt-6" style={{ color: "var(--muted)" }}>
-              No hay libros que coincidan con el filtro.
+              {t.library.noMatches}
             </p>
           )}
         </section>

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
 import { Check, Trash2 } from "lucide-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { useI18n } from "@/lib/i18n";
+import { voiceLabel } from "@/lib/voices";
 
 const COVER_PALETTES = [
   { bg: "#2f4a3a", ink: "#efe9dc" },
@@ -44,6 +46,7 @@ export function BookCard({
   );
   const [imgFailed, setImgFailed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const { t, locale } = useI18n();
 
   const bookVoices = voices.filter(
     (v) =>
@@ -80,7 +83,7 @@ export function BookCard({
     <article className="relative flex flex-col gap-3.5 min-w-0">
       <Link
         href={`/reader?id=${book.id}`}
-        aria-label={`Abrir ${book.title}`}
+        aria-label={t.library.open(book.title)}
         className="cover-card group relative block aspect-[2/3] w-full overflow-hidden rounded-[8px] no-underline"
         style={{
           boxShadow: "var(--shadow-cover)",
@@ -98,7 +101,7 @@ export function BookCard({
         ) : (
           <div className="w-full h-full p-4 pl-5 flex flex-col justify-between box-border select-none">
             <span className="text-[11px] font-medium tracking-[0.01em] line-clamp-1">
-              {book.author || "Autor desconocido"}
+              {book.author || t.common.unknownAuthor}
             </span>
             <span className="font-serif text-[21px] leading-[1.14] overflow-wrap-anywhere line-clamp-4">
               {book.title}
@@ -127,14 +130,14 @@ export function BookCard({
               {book.title}
             </h3>
             <p className="m-0 mt-0.5 text-[13px] truncate" style={{ color: "var(--muted)" }}>
-              {book.author || "Autor desconocido"}
+              {book.author || t.common.unknownAuthor}
             </p>
           </div>
 
           <button
             type="button"
-            aria-label={`Eliminar ${book.title}`}
-            title="Eliminar libro"
+            aria-label={t.book.deleteNamed(book.title)}
+            title={t.book.deleteBook}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -149,13 +152,13 @@ export function BookCard({
         {progressPct === 100 ? (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium tabular-nums" style={{ color: "var(--soft)" }}>
             <Check className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={2.2} />
-            <span>Leído · {totalPages} págs.</span>
+            <span>{t.book.finished(totalPages)}</span>
           </span>
         ) : isStarted ? (
           <div className="flex flex-col gap-1 mt-0.5">
             <div
               role="progressbar"
-              aria-label={`Progreso de ${book.title}`}
+              aria-label={t.library.progressOf(book.title)}
               aria-valuenow={progressPct}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -168,12 +171,12 @@ export function BookCard({
               />
             </div>
             <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
-              Pág. {currentPage} de {totalPages} · {progressPct}%
+              {t.common.pageOf(currentPage, totalPages)} · {progressPct}%
             </span>
           </div>
         ) : (
           <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
-            {totalPages} págs. · sin empezar
+            {t.book.notStarted(totalPages)}
           </span>
         )}
 
@@ -184,7 +187,7 @@ export function BookCard({
               className="text-[11px] font-medium"
               style={{ color: "var(--muted)" }}
             >
-              Voz
+              {t.book.voice}
             </label>
             <select
               id={`voice-select-${book.id}`}
@@ -196,7 +199,7 @@ export function BookCard({
                 boxShadow: "var(--ring-seg)",
                 color: "var(--ink)",
               }}
-              title="Cambiar la persona que narra este libro"
+              title={t.book.voiceHint}
             >
               {voiceOptions.map((v) => (
                 <option
@@ -204,7 +207,7 @@ export function BookCard({
                   value={v.short_name}
                   className="bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                 >
-                  {v.friendly_name}
+                  {voiceLabel(v, locale, t)}
                 </option>
               ))}
             </select>
@@ -214,9 +217,9 @@ export function BookCard({
 
       <ConfirmModal
         isOpen={confirmingDelete}
-        title="Eliminar libro"
-        message={`Se eliminará «${book.title}» de tu biblioteca, junto con tu progreso y el audio generado.`}
-        confirmLabel="Eliminar"
+        title={t.book.deleteBook}
+        message={t.book.deleteMessage(book.title)}
+        confirmLabel={t.book.delete}
         destructive
         onConfirm={() => {
           setConfirmingDelete(false);
