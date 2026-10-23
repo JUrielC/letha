@@ -175,7 +175,7 @@ export const en = {
     installedVersion: (version: string) => `Installed version: ${version}`,
     checkUpdates: "Check for updates",
     checkOnLaunch: "Check when Letha opens",
-    checkOnLaunchDescription: "Checks at most once a day for a new version and lets you know in the library.",
+    checkOnLaunchDescription: "Every time Letha opens, it checks for a new version and lets you know in the library.",
     checkOnLaunchLabel: "Check for updates when Letha opens",
     upToDate: (version: string) => `You have the latest version (${version}).`,
     noReleases: "No versions have been published yet.",

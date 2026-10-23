@@ -180,7 +180,7 @@ export const pt: Messages = {
     installedVersion: (version) => `Versão instalada: ${version}`,
     checkUpdates: "Buscar atualizações",
     checkOnLaunch: "Buscar ao abrir o Letha",
-    checkOnLaunchDescription: "Verifica no máximo uma vez por dia se há uma nova versão e avisa na biblioteca.",
+    checkOnLaunchDescription: "Sempre que você abre o Letha, ele verifica se há uma nova versão e avisa na biblioteca.",
     checkOnLaunchLabel: "Buscar atualizações ao abrir o Letha",
     upToDate: (version) => `Você tem a versão mais recente (${version}).`,
     noReleases: "Ainda não há versões publicadas.",

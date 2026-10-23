@@ -728,6 +728,11 @@ def test_update_check_reports_new_version_and_caches_it(monkeypatch):
     client.get("/api/updates?force=true")
     assert len(calls) == 2
 
+    # Una búsqueda de la apertura anterior no cuenta: al volver a abrir la app se consulta de nuevo
+    monkeypatch.setattr(updates_service, "_STARTED_AT", time.time() + 1)
+    client.get("/api/updates")
+    assert len(calls) == 3
+
 
 def test_update_check_respects_settings_and_skipped_version(monkeypatch):
     from letha.services import updates as updates_service

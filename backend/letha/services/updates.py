@@ -24,7 +24,8 @@ from letha import __version__, config, database
 
 # Queda grabada en cada copia instalada: debe ser una URL que se controle a largo plazo
 MANIFEST_URL = os.environ.get("LETHA_UPDATE_URL", "https://letha.jurielc.com/updates/latest.json")
-CHECK_INTERVAL_SECONDS = 24 * 60 * 60
+# El servidor arranca con cada apertura de la app: se busca una vez por apertura y no en cada petición
+_STARTED_AT = time.time()
 # Debe coincidir con main.swift: la ventana de macOS se cierra en vez de mostrar un error
 UPDATE_EXIT_CODE = 75
 
@@ -116,7 +117,7 @@ def check_for_updates(force: bool = False) -> Dict[str, Any]:
         return info
 
     cached = json.loads(database.get_setting("update_check") or "null")
-    if force or not cached or time.time() - cached["checked_at"] > CHECK_INTERVAL_SECONDS:
+    if force or not cached or cached["checked_at"] < _STARTED_AT:
         try:
             cached = {"checked_at": time.time(), "release": fetch_latest_release()}
         except (OSError, ValueError):

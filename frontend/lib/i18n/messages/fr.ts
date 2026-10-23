@@ -182,7 +182,7 @@ export const fr: Messages = {
     checkUpdates: "Rechercher des mises à jour",
     checkOnLaunch: "Rechercher à l’ouverture de Letha",
     checkOnLaunchDescription:
-      "Vérifie au plus une fois par jour s’il existe une nouvelle version et vous prévient dans la bibliothèque.",
+      "À chaque ouverture de Letha, vérifie s’il existe une nouvelle version et vous prévient dans la bibliothèque.",
     checkOnLaunchLabel: "Rechercher des mises à jour à l’ouverture de Letha",
     upToDate: (version) => `Vous avez la dernière version (${version}).`,
     noReleases: "Aucune version n’a encore été publiée.",
