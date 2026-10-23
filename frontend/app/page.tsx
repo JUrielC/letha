@@ -155,8 +155,8 @@ export default function HomePage() {
   const continuePersona = extractPersona(continueVoice?.friendly_name, continueBook?.voice);
 
   const otherInProgress = useMemo(() => {
-    if (!continueBook) return books.filter(isStarted).slice(0, 3);
-    return books.filter((b) => b.id !== continueBook.id && isStarted(b)).slice(0, 3);
+    if (!continueBook) return books.filter(isStarted).slice(0, 2);
+    return books.filter((b) => b.id !== continueBook.id && isStarted(b)).slice(0, 2);
   }, [books, continueBook]);
 
   const totalPages = useMemo(

@@ -31,6 +31,7 @@ function OptionGrid<T extends string | boolean>({
   options,
   value,
   onChange,
+  children,
 }: {
   name: string;
   legend: string;
@@ -38,6 +39,7 @@ function OptionGrid<T extends string | boolean>({
   options: OptionDef<T>[];
   value: T;
   onChange: (v: T) => void;
+  children?: React.ReactNode;
 }) {
   return (
     <section aria-labelledby={name} className="flex flex-wrap gap-5 lg:gap-14 py-8">
@@ -51,84 +53,89 @@ function OptionGrid<T extends string | boolean>({
       </div>
 
       <div
-        role="radiogroup"
-        aria-labelledby={name}
-        className="glass flex-[999_1_560px] min-w-0 p-2.5 rounded-[26px] grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+        className="glass flex-[999_1_560px] min-w-0 p-2.5 rounded-[26px] flex flex-col gap-2.5"
         style={{
           background: "var(--glass-sub)",
           boxShadow: "var(--ring-sub)",
         }}
       >
-        {options.map((opt, idx) => {
-          const selected = opt.value === value;
-          const id = `${name}-${String(opt.value)}`;
-          return (
-            <label
-              key={id}
-              htmlFor={id}
-              className="tile animate-rise-gradient relative text-left p-[18px] rounded-[20px] cursor-pointer flex flex-col gap-3 border-0 select-none"
-              style={{
-                animationDelay: `${idx * 80}ms`,
-                background: selected ? "var(--glass-seg-on)" : "var(--tile-off)",
-                boxShadow: selected
-                  ? "inset 0 0 0 1.5px var(--accent-border), var(--shadow-tile-on)"
-                  : "var(--shadow-tile-off)",
-                color: "var(--ink)",
-              }}
-            >
-              <input
-                id={id}
-                type="radio"
-                name={name}
-                checked={selected}
-                onChange={() => onChange(opt.value)}
-                className="sr-only"
-              />
-              <span className="flex items-center gap-2.5 flex-wrap">
-                <span
-                  aria-hidden="true"
-                  className="w-[18px] h-[18px] rounded-full inline-flex items-center justify-center box-border"
-                  style={{
-                    border: selected ? "0" : "1px solid var(--dot-off)",
-                    background: selected ? "var(--accent)" : "transparent",
-                  }}
-                >
-                  {selected && (
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ background: "#ffffff" }}
-                    />
+        <div
+          role="radiogroup"
+          aria-labelledby={name}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+        >
+          {options.map((opt, idx) => {
+            const selected = opt.value === value;
+            const id = `${name}-${String(opt.value)}`;
+            return (
+              <label
+                key={id}
+                htmlFor={id}
+                className="tile animate-rise-gradient relative text-left p-[18px] rounded-[20px] cursor-pointer flex flex-col gap-3 border-0 select-none"
+                style={{
+                  animationDelay: `${idx * 80}ms`,
+                  background: selected ? "var(--glass-seg-on)" : "var(--tile-off)",
+                  boxShadow: selected
+                    ? "inset 0 0 0 1.5px var(--accent-border), var(--shadow-tile-on)"
+                    : "var(--shadow-tile-off)",
+                  color: "var(--ink)",
+                }}
+              >
+                <input
+                  id={id}
+                  type="radio"
+                  name={name}
+                  checked={selected}
+                  onChange={() => onChange(opt.value)}
+                  className="sr-only"
+                />
+                <span className="flex items-center gap-2.5 flex-wrap">
+                  <span
+                    aria-hidden="true"
+                    className="w-[18px] h-[18px] rounded-full inline-flex items-center justify-center box-border"
+                    style={{
+                      border: selected ? "0" : "1px solid var(--dot-off)",
+                      background: selected ? "var(--accent)" : "transparent",
+                    }}
+                  >
+                    {selected && (
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ background: "#ffffff" }}
+                      />
+                    )}
+                  </span>
+                  <span className="text-[15px] font-medium">{opt.title}</span>
+                  {opt.isDefault && (
+                    <span className="text-xs" style={{ color: "var(--muted)" }}>
+                      Por defecto
+                    </span>
                   )}
                 </span>
-                <span className="text-[15px] font-medium">{opt.title}</span>
-                {opt.isDefault && (
-                  <span className="text-xs" style={{ color: "var(--muted)" }}>
-                    Por defecto
+
+                <span className="text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
+                  {opt.description}
+                </span>
+
+                {opt.example && (
+                  <span
+                    className="font-serif text-base leading-[1.6] p-3 rounded-[14px] block"
+                    style={{ background: "var(--sample)" }}
+                  >
+                    {opt.example}
                   </span>
                 )}
-              </span>
 
-              <span className="text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
-                {opt.description}
-              </span>
-
-              {opt.example && (
-                <span
-                  className="font-serif text-base leading-[1.6] p-3 rounded-[14px] block"
-                  style={{ background: "var(--sample)" }}
-                >
-                  {opt.example}
-                </span>
-              )}
-
-              {opt.technical && (
-                <code className="font-mono text-xs" style={{ color: "var(--muted)" }}>
-                  {opt.technical}
-                </code>
-              )}
-            </label>
-          );
-        })}
+                {opt.technical && (
+                  <code className="font-mono text-xs" style={{ color: "var(--muted)" }}>
+                    {opt.technical}
+                  </code>
+                )}
+              </label>
+            );
+          })}
+        </div>
+        {children}
       </div>
     </section>
   );
@@ -140,6 +147,7 @@ function SettingsContent() {
 
   const [percent, setPercent] = useState<number>(DEFAULT_PERCENT);
   const [autoAdvance, setAutoAdvance] = useState<boolean>(true);
+  const [autoAdvancePage, setAutoAdvancePage] = useState<boolean>(true);
   const [boundaryType, setBoundaryType] = useState<Boundary>("SentenceBoundary");
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -166,6 +174,7 @@ function SettingsContent() {
       .then((s) => {
         setPercent(Math.round((s.edge_base_speed || 0.85) * 100));
         setAutoAdvance(s.auto_advance_sentence ?? true);
+        setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
       })
       .catch((err) => {
@@ -191,7 +200,12 @@ function SettingsContent() {
   const rateDiff = percent - 100;
   const rateLabel = rateDiff >= 0 ? `+${rateDiff}%` : `${rateDiff}%`;
 
-  const saveSettings = (nextPercent: number, nextAutoAdvance: boolean, nextBoundary: Boundary) => {
+  const saveSettings = (
+    nextPercent: number,
+    nextAutoAdvance: boolean,
+    nextBoundary: Boundary,
+    nextAutoAdvancePage: boolean = autoAdvancePage
+  ) => {
     setSaving(true);
     setError(null);
     const p = (async () => {
@@ -200,6 +214,7 @@ function SettingsContent() {
         await api.updateAppSettings({
           edge_base_speed: decimal,
           auto_advance_sentence: nextAutoAdvance,
+          auto_advance_page: nextAutoAdvancePage,
           boundary_type: nextBoundary,
         });
         setSavedNotice(true);
@@ -216,17 +231,22 @@ function SettingsContent() {
 
   const handleModeChange = (nextAuto: boolean) => {
     setAutoAdvance(nextAuto);
-    saveSettings(percent, nextAuto, boundaryType);
+    saveSettings(percent, nextAuto, boundaryType, autoAdvancePage);
+  };
+
+  const handleAutoAdvancePageChange = (nextAutoPage: boolean) => {
+    setAutoAdvancePage(nextAutoPage);
+    saveSettings(percent, autoAdvance, boundaryType, nextAutoPage);
   };
 
   const handleBoundaryChange = (nextBoundary: Boundary) => {
     setBoundaryType(nextBoundary);
-    saveSettings(percent, autoAdvance, nextBoundary);
+    saveSettings(percent, autoAdvance, nextBoundary, autoAdvancePage);
   };
 
   const handlePresetClick = (p: number) => {
     setPercent(p);
-    saveSettings(p, autoAdvance, boundaryType);
+    saveSettings(p, autoAdvance, boundaryType, autoAdvancePage);
   };
 
   const handleSample = async () => {
@@ -396,7 +416,59 @@ function SettingsContent() {
               options={modeOptions}
               value={autoAdvance}
               onChange={handleModeChange}
-            />
+            >
+              {autoAdvance && (
+                <div
+                  className="animate-rise-gradient p-4 rounded-[20px] flex items-center justify-between gap-4 transition"
+                  style={{
+                    background: autoAdvancePage ? "var(--glass-seg-on)" : "var(--tile-off)",
+                    boxShadow: autoAdvancePage
+                      ? "inset 0 0 0 1.5px var(--accent-border), var(--shadow-tile-on)"
+                      : "var(--shadow-tile-off)",
+                  }}
+                >
+                  <div className="flex-1 min-w-0 pr-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-medium" style={{ color: "var(--ink)" }}>
+                        Pasar páginas automáticamente
+                      </span>
+                      <span className="text-xs" style={{ color: "var(--muted)" }}>
+                        Por defecto
+                      </span>
+                    </div>
+                    <p className="m-0 mt-1 text-sm leading-relaxed" style={{ color: "var(--soft)" }}>
+                      Al terminar de escuchar la última frase de la página, pasa a la siguiente y continúa la lectura sin detenerse.
+                    </p>
+                  </div>
+
+                  <label
+                    htmlFor="auto-advance-page-toggle"
+                    className="relative inline-flex items-center shrink-0 cursor-pointer select-none"
+                    aria-label="Pasar páginas automáticamente"
+                  >
+                    <input
+                      id="auto-advance-page-toggle"
+                      type="checkbox"
+                      checked={autoAdvancePage}
+                      onChange={(e) => handleAutoAdvancePageChange(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div
+                      className="w-12 h-7 rounded-full transition-colors flex items-center px-0.5"
+                      style={{
+                        background: autoAdvancePage ? "var(--accent)" : "var(--dot-off)",
+                      }}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-full bg-white shadow-md transform transition-transform ${
+                          autoAdvancePage ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </div>
+                  </label>
+                </div>
+              )}
+            </OptionGrid>
 
             <OptionGrid
               name="boundary"

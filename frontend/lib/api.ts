@@ -70,6 +70,7 @@ export interface VoiceItem {
 export interface AppSettings {
   edge_base_speed: number;
   auto_advance_sentence: boolean;
+  auto_advance_page: boolean;
   boundary_type: "SentenceBoundary" | "WordBoundary";
 }
 
@@ -133,6 +134,7 @@ export const api = {
   updateAppSettings: (payload: {
     edge_base_speed?: number;
     auto_advance_sentence?: boolean;
+    auto_advance_page?: boolean;
     boundary_type?: "SentenceBoundary" | "WordBoundary";
   }) =>
     request<AppSettings>("/api/settings", {

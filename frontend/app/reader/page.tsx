@@ -88,6 +88,7 @@ function ReaderContent() {
   const [isAaOpen, setIsAaOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
+  const [autoAdvancePage, setAutoAdvancePage] = useState<boolean>(true);
   const [boundaryType, setBoundaryType] = useState<"SentenceBoundary" | "WordBoundary">(
     "SentenceBoundary"
   );
@@ -98,6 +99,7 @@ function ReaderContent() {
   const pendingRestoreRef = useRef<{ chapterIdx: number; sentenceIdx: number } | null>(null);
   const pendingSeekTimeRef = useRef<number | null>(null);
   const resumePlayAfterSwapRef = useRef<boolean>(false);
+  const autoPlayNextChapterRef = useRef<boolean>(false);
   const isPlayingRef = useRef<boolean>(false);
   const isInitialLoadRef = useRef<boolean>(true);
   const singleSentenceEndRef = useRef<number | null>(null);
@@ -120,6 +122,7 @@ function ReaderContent() {
       .getAppSettings()
       .then((s) => {
         setAutoAdvanceSentence(s.auto_advance_sentence ?? true);
+        setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(
           s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary"
         );
@@ -196,8 +199,12 @@ function ReaderContent() {
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    setIsPlaying(false);
-    isPlayingRef.current = false;
+    if (!autoPlayNextChapterRef.current) {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+    } else if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
     setCurrentTime(0);
     pendingSeekTimeRef.current = null;
     resumePlayAfterSwapRef.current = false;
@@ -209,7 +216,9 @@ function ReaderContent() {
       pendingRestoreRef.current = null;
     }
 
-    setActiveSentenceIdx(restoredSentence >= 0 ? restoredSentence : -1);
+    setActiveSentenceIdx(
+      restoredSentence >= 0 ? restoredSentence : autoPlayNextChapterRef.current ? 0 : -1
+    );
 
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
@@ -356,6 +365,9 @@ function ReaderContent() {
         }
       } catch (err: any) {
         if (ignore || err?.name === "AbortError") return;
+        autoPlayNextChapterRef.current = false;
+        setIsPlaying(false);
+        isPlayingRef.current = false;
         console.error(err);
       } finally {
         if (!ignore) {
@@ -549,6 +561,7 @@ function ReaderContent() {
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
+      autoPlayNextChapterRef.current = false;
       singleSentenceEndRef.current = null;
     } else {
       if (!autoAdvanceSentence && chapter?.sentences?.length) {
@@ -667,15 +680,41 @@ function ReaderContent() {
                 setCurrentTime(pendingSeekTimeRef.current);
                 pendingSeekTimeRef.current = null;
               }
-              if (resumePlayAfterSwapRef.current) {
+              if (autoPlayNextChapterRef.current) {
+                autoPlayNextChapterRef.current = false;
+                audioRef.current.play().catch(console.error);
+                setIsPlaying(true);
+                isPlayingRef.current = true;
+              } else if (resumePlayAfterSwapRef.current) {
                 resumePlayAfterSwapRef.current = false;
                 audioRef.current.play().catch(console.error);
                 setIsPlaying(true);
+                isPlayingRef.current = true;
               }
             }
           }}
           onEnded={() => {
+            if (
+              autoAdvanceSentence &&
+              autoAdvancePage &&
+              book &&
+              currentChapterIdx !== null &&
+              currentChapterIdx + 1 < book.total_chapters
+            ) {
+              autoPlayNextChapterRef.current = true;
+              setIsPlaying(true);
+              isPlayingRef.current = true;
+              setCurrentChapterIdx(currentChapterIdx + 1);
+            } else {
+              autoPlayNextChapterRef.current = false;
+              setIsPlaying(false);
+              isPlayingRef.current = false;
+            }
+          }}
+          onError={() => {
+            autoPlayNextChapterRef.current = false;
             setIsPlaying(false);
+            isPlayingRef.current = false;
           }}
         />
       )}
@@ -912,6 +951,7 @@ function ReaderContent() {
                   key={c.idx}
                   type="button"
                   onClick={() => {
+                    autoPlayNextChapterRef.current = false;
                     setCurrentChapterIdx(c.idx);
                     setIsTocOpen(false);
                   }}
@@ -1062,9 +1102,12 @@ function ReaderContent() {
             <button
               type="button"
               disabled={currentChapterIdx === null || currentChapterIdx <= 0}
-              onClick={() =>
-                currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx - 1)
-              }
+              onClick={() => {
+                autoPlayNextChapterRef.current = false;
+                if (currentChapterIdx !== null) {
+                  setCurrentChapterIdx(currentChapterIdx - 1);
+                }
+              }}
               aria-label="Página anterior"
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
               style={{ color: "var(--ink)" }}
@@ -1126,9 +1169,12 @@ function ReaderContent() {
                 currentChapterIdx === null ||
                 currentChapterIdx + 1 >= book.total_chapters
               }
-              onClick={() =>
-                currentChapterIdx !== null && setCurrentChapterIdx(currentChapterIdx + 1)
-              }
+              onClick={() => {
+                autoPlayNextChapterRef.current = false;
+                if (currentChapterIdx !== null) {
+                  setCurrentChapterIdx(currentChapterIdx + 1);
+                }
+              }}
               aria-label="Siguiente página"
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
               style={{ color: "var(--ink)" }}

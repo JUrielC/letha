@@ -530,22 +530,25 @@ def test_edge_tts_default_rate_is_85_percent():
     assert res_get.status_code == 200
     assert res_get.json()["edge_base_speed"] == 0.85
     assert res_get.json()["auto_advance_sentence"] is True
+    assert res_get.json()["auto_advance_page"] is True
     assert res_get.json()["boundary_type"] == "SentenceBoundary"
     assert tts_service.EDGE_BASE_SPEED == 0.85
     assert tts_service.format_rate(1.0) == "-15%"
 
-    # Cambiar velocidad nativa a 90% (-10%), modo solo al clickear y WordBoundary
+    # Cambiar velocidad nativa a 90% (-10%), modo solo al clickear, sin pasar página y WordBoundary
     res_put = client.put(
         "/api/settings",
         json={
             "edge_base_speed": 0.90,
             "auto_advance_sentence": False,
+            "auto_advance_page": False,
             "boundary_type": "WordBoundary",
         },
     )
     assert res_put.status_code == 200
     assert res_put.json()["edge_base_speed"] == 0.90
     assert res_put.json()["auto_advance_sentence"] is False
+    assert res_put.json()["auto_advance_page"] is False
     assert res_put.json()["boundary_type"] == "WordBoundary"
     assert tts_service.format_rate(1.0) == "-10%"
     assert tts_service.AUDIO_CACHE_TAG == "0.90_wb"

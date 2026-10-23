@@ -95,6 +95,9 @@ def init_db():
         conn.execute(
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('auto_advance_sentence', '1')"
         )
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('auto_advance_page', '1')"
+        )
         row_boundary = conn.execute(
             "SELECT value FROM app_settings WHERE key = 'boundary_type'"
         ).fetchone()
@@ -171,6 +174,30 @@ def set_auto_advance_sentence(enabled: bool) -> bool:
         conn.execute(
             """
             INSERT INTO app_settings (key, value) VALUES ('auto_advance_sentence', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (val,),
+        )
+        conn.commit()
+    return bool(enabled)
+
+
+def get_auto_advance_page() -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'auto_advance_page'"
+        ).fetchone()
+        if row:
+            return row["value"] != "0"
+    return True
+
+
+def set_auto_advance_page(enabled: bool) -> bool:
+    val = "1" if enabled else "0"
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES ('auto_advance_page', ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """,
             (val,),

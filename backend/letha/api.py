@@ -119,6 +119,7 @@ def get_app_settings():
     return AppSettings(
         edge_base_speed=database.get_edge_base_speed(),
         auto_advance_sentence=database.get_auto_advance_sentence(),
+        auto_advance_page=database.get_auto_advance_page(),
         boundary_type=database.get_boundary_type(),
     )
 
@@ -135,6 +136,11 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.auto_advance_sentence is not None
         else database.get_auto_advance_sentence()
     )
+    auto_adv_page = (
+        database.set_auto_advance_page(payload.auto_advance_page)
+        if payload.auto_advance_page is not None
+        else database.get_auto_advance_page()
+    )
     b_type = (
         database.set_boundary_type(payload.boundary_type)
         if payload.boundary_type is not None
@@ -143,6 +149,7 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
     return AppSettings(
         edge_base_speed=speed,
         auto_advance_sentence=auto_adv,
+        auto_advance_page=auto_adv_page,
         boundary_type=b_type,
     )
 

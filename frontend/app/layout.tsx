@@ -29,7 +29,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={`${instrumentSans.variable} ${literata.variable}`}>
+    <html
+      lang="es"
+      suppressHydrationWarning
+      className={`${instrumentSans.variable} ${literata.variable}`}
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -47,7 +51,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen transition-colors duration-200 font-sans">
+      <body
+        suppressHydrationWarning
+        className="min-h-screen transition-colors duration-200 font-sans"
+      >
         <KeepAlive />
         {children}
       </body>

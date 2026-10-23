@@ -91,12 +91,14 @@ class VoiceItem(BaseModel):
 class AppSettings(BaseModel):
     edge_base_speed: float = 0.85
     auto_advance_sentence: bool = True
+    auto_advance_page: bool = True
     boundary_type: str = "SentenceBoundary"
 
 
 class UpdateAppSettingsRequest(BaseModel):
     edge_base_speed: Optional[float] = Field(default=None, ge=0.5, le=1.5)
     auto_advance_sentence: Optional[bool] = None
+    auto_advance_page: Optional[bool] = None
     boundary_type: Optional[str] = None
 
 
