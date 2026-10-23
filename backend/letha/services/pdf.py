@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import pymupdf
 
 
@@ -94,6 +96,8 @@ def split_sentences(text: str) -> List[str]:
         return []
 
     protected = _protect_abbrevs(text)
+    # La marca de una lista ("A. Opción", "1. Paso") al inicio del párrafo no cierra una oración
+    protected = re.sub(r"^(\s*(?:[A-Za-z]|\d{1,3}))\.(?=\s)", r"\1__LIST_MARK__", protected)
 
     # Dividir tras signo terminal (. ! ? …) seguido opcionalmente de comillas/paréntesis de cierre
     protected = re.sub(
@@ -108,7 +112,7 @@ def split_sentences(text: str) -> List[str]:
         s = s.strip()
         if not s:
             continue
-        s = _restore_abbrevs(s)
+        s = _restore_abbrevs(s).replace("__LIST_MARK__", ".")
         s = re.sub(r"\s+", " ", s).strip()
         if s:
             sentences.append(s)
@@ -153,22 +157,32 @@ def _is_heading_like(text: str) -> bool:
     return bool(main_words) and sum(w[0].isupper() for w in main_words) / len(main_words) >= 0.75
 
 
-def _is_paragraph_break(prev: str, nxt: str, single_line: bool = False) -> bool:
+def _ends_with_link(text: str) -> bool:
+    return bool(re.search(r"(?:https?://|www\.)\S+$", text, re.IGNORECASE))
+
+
+def _is_paragraph_break(prev: str, nxt: str, single_line: bool = False, spaced: bool = False) -> bool:
     """
     Decide si entre dos fragmentos consecutivos hay un cambio de párrafo o solo un salto
-    de línea. Un fragmento sin puntuación final solo abre párrafo si parece un título,
-    para no partir oraciones en PDFs que guardan cada línea como un bloque.
+    de línea. Un fragmento sin puntuación final solo abre párrafo si los separa un espacio
+    vertical (`spaced`), termina en un enlace o parece un título, para no partir oraciones
+    en PDFs que guardan cada línea como un bloque.
     """
     last = prev.strip().rsplit("\n\n", 1)[-1]
     if not last or last.endswith(("-", "‐", "­")) or _starts_lowercase(nxt):
         return False
-    if is_complete_sentence(last):
+    if spaced or is_complete_sentence(last) or _ends_with_link(last):
         return True
     return _is_heading_like(last) or (single_line and len(last) <= 60)
 
 
-def _join_fragments(prev: str, nxt: str, single_line: bool = False) -> str:
-    if _is_paragraph_break(prev, nxt, single_line):
+def _opens_with_heading(text: str) -> bool:
+    first = text.strip().split("\n\n", 1)[0]
+    return _is_heading_like(first) and not is_complete_sentence(first)
+
+
+def _join_fragments(prev: str, nxt: str, single_line: bool = False, spaced: bool = False) -> str:
+    if _is_paragraph_break(prev, nxt, single_line, spaced):
         return f"{prev}\n\n{nxt}"
     if re.search(r"\w[-‐­]$", prev):
         return f"{prev[:-1]}{nxt}" if _starts_lowercase(nxt) else f"{prev}{nxt}"
@@ -202,46 +216,97 @@ def _join_carryover(carryover: str, next_text: str) -> str:
     return f"{c} {n}"
 
 
-def clean_page_text(page: pymupdf.Page) -> str:
+def _text_blocks(page: pymupdf.Page) -> List[Tuple[tuple, bool]]:
     """
-    Extrae el texto de la página descartando márgenes superiores (encabezados)
-    e inferiores (pies de página / números de página). Los títulos y párrafos quedan
-    separados por una línea en blanco y las líneas de un mismo párrafo se unen.
+    Bloques de texto no vacíos de la página, cada uno con si cae por completo en el 7%
+    superior o inferior, donde suelen ir encabezados, pies y números de página.
     """
-    rect = page.rect
-    page_height = rect.height
+    top_margin = page.rect.height * 0.07
+    bottom_margin = page.rect.height * 0.93
+    # Formato de block: (x0, y0, x1, y1, text, block_no, block_type); block_type 0 = texto, 1 = imagen
+    return [
+        (b, b[3] <= top_margin or b[1] >= bottom_margin)
+        for b in page.get_text("blocks")
+        if b[6] == 0 and b[4].strip()
+    ]
 
-    # Filtrar texto que esté en el 7% superior o 7% inferior (márgenes típicos)
-    top_margin = page_height * 0.07
-    bottom_margin = page_height * 0.93
 
-    blocks = page.get_text("blocks")
-    # Formato de block: (x0, y0, x1, y1, text, block_no, block_type)
-    # block_type 0 = texto, 1 = imagen
+def _layout_pattern(text: str) -> str:
+    """Texto del bloque con los números cambiados por '#', para reconocer etiquetas como 'Question: 1' y 'Question: 2'."""
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", text)).strip().lower()
+
+
+def _numbered_labels(doc: pymupdf.Document) -> Dict[str, Set[str]]:
+    """
+    Etiquetas numeradas ('Question: 1') que aparecen tanto en los márgenes como en el cuerpo:
+    son contenido y no encabezados. Para cada patrón, devuelve las líneas sin número que se
+    repiten idénticas en todas sus apariciones (como el nombre del sitio) para no leerlas.
+    """
+    in_body: Set[str] = set()
+    in_margin: Set[str] = set()
+    occurrences: Dict[str, List[List[str]]] = defaultdict(list)
+    for page in doc:
+        for block, in_margins in _text_blocks(page):
+            text = block[4]
+            if not (re.search(r"\d", text) and re.search(r"[^\W\d_]", text)):
+                continue
+            pattern = _layout_pattern(text)
+            (in_margin if in_margins else in_body).add(pattern)
+            occurrences[pattern].append([line.strip() for line in text.splitlines() if line.strip()])
+
+    labels = {}
+    for pattern in in_body & in_margin:
+        first, *rest = occurrences[pattern]
+        repeated = set(first).intersection(*rest) if rest else set()
+        labels[pattern] = {line for line in repeated if not re.search(r"\d", line)}
+    return labels
+
+
+def _side_by_side(a: tuple, b: tuple) -> bool:
+    return a[1] < b[3] and b[1] < a[3] and (a[2] <= b[0] or b[2] <= a[0])
+
+
+def _spaced(prev: tuple, block: tuple) -> bool:
+    """Si entre dos bloques hay más espacio vertical que el de una línea."""
+    line_height = (prev[3] - prev[1]) / (prev[4].strip().count("\n") + 1)
+    return block[1] - prev[3] > line_height * 0.8
+
+
+def clean_page_text(page: pymupdf.Page, labels: Optional[Dict[str, Set[str]]] = None) -> str:
+    """
+    Extrae el texto de la página descartando encabezados, pies y números de página de los
+    márgenes, salvo las etiquetas numeradas de `labels` (ver _numbered_labels). Los títulos y
+    párrafos quedan separados por una línea en blanco y las líneas de un mismo párrafo se unen.
+    """
+    labels = labels or {}
+    blocks = _text_blocks(page)
+    # Con una sola columna se lee de arriba abajo: algunos PDFs guardan los encabezados de sección al final
+    if not any(_side_by_side(a, b) for (a, _), (b, _) in combinations(blocks, 2)):
+        blocks.sort(key=lambda item: (item[0][1], item[0][0]))
 
     full_page_text = ""
-    prev_single_line = False
-    for b in blocks:
-        if b[6] != 0:
-            continue
-        y0, y1 = b[1], b[3]
+    prev_block = None
+    prev_is_label = False
+    for b, in_margins in blocks:
         text = b[4].strip()
-
-        if not text:
+        pattern = _layout_pattern(text)
+        is_label = pattern in labels
+        if is_label:
+            text = "\n".join(line for line in text.splitlines() if line.strip() and line.strip() not in labels[pattern])
+        elif in_margins and (len(text) < 40 or text.isdigit()):
             continue
-
-        # Si el bloque está completamente en el margen superior o inferior, se descarta
-        if y1 <= top_margin or y0 >= bottom_margin:
-            # Comprobar si parece un número de página suelto o encabezado corto
-            if len(text) < 40 or text.isdigit():
-                continue
 
         block = _block_text(text)
-        if full_page_text:
-            full_page_text = _join_fragments(full_page_text, block, prev_single_line)
-        else:
+        if not full_page_text:
             full_page_text = block
-        prev_single_line = "\n" not in text
+        elif is_label or prev_is_label:
+            # Una etiqueta siempre va sola, aunque lo que sigue empiece en minúscula
+            full_page_text = f"{full_page_text}\n\n{block}"
+        else:
+            prev_single_line = "\n" not in prev_block[4].strip()
+            full_page_text = _join_fragments(full_page_text, block, prev_single_line, _spaced(prev_block, b))
+        prev_block = b
+        prev_is_label = is_label
 
     return full_page_text.strip()
 
@@ -270,11 +335,13 @@ def reassemble_chapters_data(raw_chapters: List[Dict[str, Any]]) -> List[Dict[st
         is_last_page = i == total - 1
         last_sentence = paragraphs[-1][-1]
         can_carry = sum(len(p) for p in paragraphs) > 1 or len(last_sentence) > 120
+        next_text = "" if is_last_page else raw_chapters[i + 1]["text_content"]
         if (
             not is_last_page
             and can_carry
             and not is_complete_sentence(last_sentence)
-            and not _is_paragraph_break(last_sentence, raw_chapters[i + 1]["text_content"])
+            and not _is_paragraph_break(last_sentence, next_text)
+            and not _opens_with_heading(next_text)
         ):
             carryover = paragraphs[-1].pop()
             if not paragraphs[-1]:
@@ -372,12 +439,13 @@ def extract_chapters(doc: pymupdf.Document) -> List[Dict[str, Any]]:
 
     raw_chapters: List[Dict[str, Any]] = []
     current_section_title = ""
+    labels = _numbered_labels(doc)
 
     for p_num in range(total_pages):
         if p_num in page_toc_titles:
             current_section_title = page_toc_titles[p_num]
 
-        p_text = clean_page_text(doc[p_num])
+        p_text = clean_page_text(doc[p_num], labels)
         if not p_text:
             continue
 

@@ -132,7 +132,7 @@ def init_db():
             WHERE audio_path IS NOT NULL AND audio_path NOT LIKE '%_{tts_service.AUDIO_CACHE_TAG}.mp3'
             """
         )
-        _migrate_paragraph_breaks(conn)
+        _migrate_pdf_extraction(conn)
         _migrate_reassemble_existing_books(conn)
         _migrate_book_languages(conn)
         _migrate_page_titles(conn)
@@ -424,13 +424,18 @@ def _migrate_page_titles(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT INTO app_settings (key, value) VALUES ('page_titles_localized', '1')")
 
 
-def _migrate_paragraph_breaks(conn: sqlite3.Connection) -> None:
+# Subirlo al cambiar cómo se extrae el texto del PDF: los libros ya importados se vuelven a extraer una vez
+PDF_EXTRACTION_VERSION = 2
+
+
+def _migrate_pdf_extraction(conn: sqlite3.Connection) -> None:
     """
-    Vuelve a extraer del PDF los libros importados cuando el texto se guardaba sin títulos
-    ni párrafos separados. Solo reemplaza un libro si sus páginas coinciden y borra el audio
-    de las páginas cuyas oraciones cambiaron. Se ejecuta una sola vez.
+    Vuelve a extraer del PDF los libros importados con una versión anterior de la extracción
+    (PDF_EXTRACTION_VERSION). Solo reemplaza un libro si sus páginas coinciden y borra el audio
+    de las páginas cuyas oraciones cambiaron. Se ejecuta una vez por versión.
     """
-    if conn.execute("SELECT 1 FROM app_settings WHERE key = 'paragraphs_extracted'").fetchone():
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'pdf_extraction_version'").fetchone()
+    if saved and saved["value"] == str(PDF_EXTRACTION_VERSION):
         return
 
     for book in conn.execute("SELECT id, file_path FROM books").fetchall():
@@ -470,7 +475,13 @@ def _migrate_paragraph_breaks(conn: sqlite3.Connection) -> None:
                 except OSError:
                     pass
 
-    conn.execute("INSERT INTO app_settings (key, value) VALUES ('paragraphs_extracted', '1')")
+    conn.execute(
+        """
+        INSERT INTO app_settings (key, value) VALUES ('pdf_extraction_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (str(PDF_EXTRACTION_VERSION),),
+    )
 
 
 def list_books() -> List[BookSummary]:

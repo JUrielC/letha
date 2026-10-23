@@ -716,6 +716,100 @@ def test_reassembling_keeps_paragraphs():
     assert "\n\n" in chapters[0]["text_content"]
 
 
+def test_a_link_without_period_does_not_swallow_the_next_text():
+    """Verifica que una línea que termina en un enlace no se una al texto que sigue, en la misma página ni en la siguiente."""
+    from letha.services import pdf as pdf_service
+
+    link = "Link: https://deepdumps.com/papers/anthropic/claude-certified-architect"
+    question = (
+        "After the web search agent and document analysis agent complete their tasks, "
+        "the coordinator invokes the synthesis agent."
+    )
+    chapters = pdf_service.reassemble_chapters_data(
+        [
+            {"title": "", "start_page": 3, "end_page": 3, "text_content": f"Total: 120 Questions\n\n{link}"},
+            {"title": "", "start_page": 4, "end_page": 4, "text_content": question},
+        ]
+    )
+    assert [s["text"] for s in chapters[0]["sentences"]] == ["Total: 120 Questions", link]
+    assert [s["text"] for s in chapters[1]["sentences"]] == [question]
+
+    assert pdf_service._join_fragments(link, question) == f"{link}\n\n{question}"
+    assert pdf_service._join_fragments("See www.letha.app", "for more details.") == "See www.letha.app for more details."
+
+
+def create_exam_pdf() -> bytes:
+    """
+    Dos páginas de un examen como el de DeepDumps: el encabezado 'Question: N' con el nombre del sitio
+    se guarda al final del flujo de la página, en el margen superior o a media página.
+    """
+    doc = pymupdf.open()
+    for number, header_y in ((1, 35), (2, 300)):
+        page = doc.new_page()
+        if number == 2:
+            page.insert_text((50, 100), "The previous answer explains the coordinator role.")
+        page.insert_text((50, header_y + 30), "after the coordinator invokes the synthesis agent, nothing happens.")
+        page.insert_text((50, header_y + 50), "A. Retry the synthesis agent")
+        page.insert_text((50, header_y + 68), "B. Pass the previous outputs in the prompt")
+        page.insert_text((50, header_y + 110), "Answer: B")
+        page.insert_text((50, 20), "Practice Exam")
+        page.insert_text((290, 830), str(number))
+        page.insert_text((50, header_y), f"Question: {number}\nDeep Dumps")
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_numbered_labels_keep_their_place_and_drop_the_site_name():
+    from letha.services import pdf as pdf_service
+
+    doc = pymupdf.open(stream=create_exam_pdf(), filetype="pdf")
+    chapters = pdf_service.extract_chapters(doc)
+    doc.close()
+
+    question = [
+        "after the coordinator invokes the synthesis agent, nothing happens.",
+        "A. Retry the synthesis agent",
+        "B. Pass the previous outputs in the prompt",
+        "Answer: B",
+    ]
+    assert [s["text"] for s in chapters[0]["sentences"]] == ["Question: 1", *question]
+    assert [s["text"] for s in chapters[1]["sentences"]] == [
+        "The previous answer explains the coordinator role.",
+        "Question: 2",
+        *question,
+    ]
+
+
+def test_a_page_with_two_columns_keeps_the_order_of_the_pdf():
+    from letha.services import pdf as pdf_service
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 120), "The left column starts the story\nand runs down the page\nfor several lines.")
+    page.insert_text((320, 100), "The right column continues it\na little higher up.")
+    assert pdf_service.clean_page_text(page) == (
+        "The left column starts the story and runs down the page for several lines.\n\n"
+        "The right column continues it a little higher up."
+    )
+    doc.close()
+
+
+def test_a_page_ending_without_period_is_not_joined_to_a_label_on_the_next_page():
+    from letha.services import pdf as pdf_service
+
+    option = "D. Configure the web search agent to only return results from the past 6 months"
+    chapters = pdf_service.reassemble_chapters_data(
+        [
+            {"title": "", "start_page": 4, "end_page": 4, "text_content": f"Which option is best?\n\n{option}"},
+            {"title": "", "start_page": 5, "end_page": 5, "text_content": "Answer: A\n\nExplanation:"},
+        ]
+    )
+    assert [s["text"] for s in chapters[0]["sentences"]] == ["Which option is best?", option]
+    assert [s["text"] for s in chapters[1]["sentences"]] == ["Answer: A", "Explanation:"]
+    assert pdf_service.split_sentences("B. Instruct the agent. Then stop.") == ["B. Instruct the agent.", "Then stop."]
+
+
 def test_existing_books_get_paragraphs_from_their_pdf():
     """
     Verifica que un libro guardado con el texto aplanado se vuelva a extraer del PDF una sola
@@ -739,7 +833,7 @@ def test_existing_books_get_paragraphs_from_their_pdf():
                 "UPDATE chapters SET text_content = ? WHERE id = ?",
                 (row["text_content"].replace("\n\n", " "), row["id"]),
             )
-        conn.execute("DELETE FROM app_settings WHERE key = 'paragraphs_extracted'")
+        conn.execute("DELETE FROM app_settings WHERE key = 'pdf_extraction_version'")
 
     stale_audio = config.AUDIO_DIR / f"{book_id}_c0_en-US-AvaNeural_0.90.mp3"
     kept_audio = config.AUDIO_DIR / f"{book_id}_c1_en-US-AvaNeural_0.90.mp3"
