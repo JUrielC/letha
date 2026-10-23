@@ -16,6 +16,7 @@ body.theme-dark {
   --glass-sub: rgba(255, 255, 255, 0.04);
   --glass-seg: rgba(255, 255, 255, 0.05);
   --glass-seg-on: rgba(255, 255, 255, 0.14);
+  --glass-seg-bar: rgba(255, 255, 255, 0.05);
   --glass-menu: rgba(22, 25, 30, 0.78);
   --glass-sheet: linear-gradient(180deg, rgba(22, 25, 30, 0.54) 0%, rgba(14, 16, 20, 0.38) 100%);
   --glass-dock: rgba(20, 23, 28, 0.48);
@@ -89,6 +90,7 @@ body:not(.theme-dark):not(.theme-sepia) {
   --glass-sub: rgba(255, 255, 255, 0.26);
   --glass-seg: rgba(255, 255, 255, 0.28);
   --glass-seg-on: rgba(255, 255, 255, 0.90);
+  --glass-seg-bar: rgba(255, 255, 255, 0.42);
   --glass-menu: rgba(255, 255, 255, 0.68);
   --glass-sheet: linear-gradient(180deg, rgba(255, 255, 255, 0.60) 0%, rgba(251, 252, 254, 0.38) 100%);
   --glass-dock: rgba(255, 255, 255, 0.44);
@@ -162,6 +164,7 @@ body.theme-sepia {
   --glass-sub: rgba(255, 250, 240, 0.26);
   --glass-seg: rgba(255, 250, 240, 0.30);
   --glass-seg-on: rgba(255, 252, 246, 0.90);
+  --glass-seg-bar: rgba(255, 250, 240, 0.30);
   --glass-menu: rgba(255, 250, 240, 0.68);
   --glass-sheet: linear-gradient(180deg, rgba(250, 244, 232, 0.62) 0%, rgba(243, 234, 216, 0.40) 100%);
   --glass-dock: rgba(250, 244, 232, 0.46);

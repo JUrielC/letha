@@ -77,7 +77,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
             aria-label={t.nav.theme}
             className="flex items-center gap-0.5 p-[3px] rounded-full"
             style={{
-              background: "var(--glass-seg)",
+              background: "var(--glass-seg-bar)",
               boxShadow: "var(--ring-seg)",
             }}
           >
