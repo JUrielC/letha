@@ -204,9 +204,15 @@ export const fr: Messages = {
     uninstallStartedWindows:
       "Letha est en cours de suppression. Si cette fenêtre ne se ferme pas toute seule, vous pouvez la fermer.",
     uninstallFailed: "Letha n’a pas pu être désinstallé.",
+    engine: "Moteur de traduction",
+    engineHint: "Choisissez celui que vous préférez ; les autres restent des alternatives.",
+    engineOnline: "En ligne",
+    engineOffline: "Hors ligne",
+    engineOfflineDescription: "Avec les langues que vous avez téléchargées",
+    engineMoveUp: (name) => `Déplacer ${name} vers le haut`,
+    engineMoveDown: (name) => `Déplacer ${name} vers le bas`,
     offline: "Traduction hors ligne",
-    offlineHint:
-      "Téléchargez des modèles pour traduire vos livres sans internet quand Microsoft et Google ne répondent pas. Ils ne servent que de secours.",
+    offlineHint: "Téléchargez des langues pour traduire vos livres sans internet.",
     offlineNeedsNative: "Choisissez d’abord votre langue maternelle.",
     offlineDownload: "Télécharger",
     offlineRetry: "Réessayer",
@@ -215,7 +221,7 @@ export const fr: Messages = {
     offlineDownloading: (percent) => `Téléchargement… ${percent} %`,
     offlineFailed: "Le téléchargement a échoué. Vérifiez votre connexion.",
     offlineShared: (languages) => `Sert aussi pour ${languages}.`,
-    offlineCredits: "Modèles Opus-MT de l’Université d’Helsinki (CC BY 4.0 et Apache 2.0).",
+    offlineCredits: "Modèles de traduction de l’Université d’Helsinki.",
     offlineLoadFailed: "Impossible de charger les modèles hors ligne.",
     footer: "Les voix neuronales proviennent de Microsoft Edge TTS et nécessitent une connexion internet.",
   },
@@ -281,5 +287,6 @@ export const fr: Messages = {
       "Le téléchargement ne correspond pas à l’empreinte publiée sur GitHub ; la mise à jour a été annulée.",
     already_latest: "Vous avez déjà la dernière version.",
     download_failed: "La nouvelle version n’a pas pu être téléchargée. Vérifiez votre connexion.",
+    invalid_translation_order: "Chaque moteur de traduction doit apparaître une seule fois.",
   },
 };

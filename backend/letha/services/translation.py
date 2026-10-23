@@ -1,6 +1,6 @@
 """
-Traducción con una cadena de proveedores sin clave (Microsoft, luego Google y, como respaldo sin
-conexión, los modelos descargados en el equipo) y caché local: cada texto se traduce una sola vez
+Traducción con una cadena de proveedores sin clave (Microsoft, Google y los modelos descargados en
+el equipo, en el orden elegido en Configuración) y caché local: cada texto se traduce una sola vez
 por par de idiomas.
 """
 
@@ -136,10 +136,15 @@ def _batches(texts: Sequence[str], provider: Provider) -> Iterator[List[str]]:
         yield batch
 
 
+def _ordered_providers() -> List[Provider]:
+    order = database.get_translation_order()
+    return sorted(PROVIDERS, key=lambda p: order.index(p.name) if p.name in order else len(order))
+
+
 def _translate_with_providers(
     texts: List[str], source: str, target: str
 ) -> Tuple[Optional[List[str]], Optional[str]]:
-    for provider in PROVIDERS:
+    for provider in _ordered_providers():
         if _down_until.get(provider.name, 0) > time.time() or not provider.available(source, target):
             continue
         try:

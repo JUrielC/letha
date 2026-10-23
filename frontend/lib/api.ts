@@ -78,7 +78,10 @@ export interface AppSettings {
   font_size: "sm" | "base" | "lg" | "xl";
   show_translation: boolean;
   last_book_id: string | null;
+  translation_order: TranslationEngine[];
 }
+
+export type TranslationEngine = "microsoft" | "google" | "offline";
 
 export interface OfflineTranslation {
   language: string;
@@ -196,6 +199,7 @@ export const api = {
     font_size?: AppSettings["font_size"];
     show_translation?: boolean;
     last_book_id?: string;
+    translation_order?: TranslationEngine[];
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",

@@ -257,6 +257,19 @@ def set_native_language(language: str) -> str:
     return language
 
 
+TRANSLATION_ENGINES = ("microsoft", "google", "offline")
+
+
+def get_translation_order() -> List[str]:
+    saved = (get_setting("translation_order") or "").split(",")
+    return saved if sorted(saved) == sorted(TRANSLATION_ENGINES) else list(TRANSLATION_ENGINES)
+
+
+def set_translation_order(order: Sequence[str]) -> List[str]:
+    set_setting("translation_order", ",".join(order))
+    return list(order)
+
+
 def get_ui_preferences() -> Dict[str, Any]:
     return {
         "theme": get_setting("ui_theme") or "light",

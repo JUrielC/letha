@@ -1452,6 +1452,33 @@ def test_offline_models_only_translate_when_online_providers_fail(monkeypatch):
     assert translation_service.translate(["Good morning."], "en", "es")["provider"] == "microsoft"
 
 
+def test_translation_engines_follow_the_order_chosen_in_settings(monkeypatch):
+    from letha.services import translation as translation_service
+
+    providers = [FakeProvider("microsoft", prefix="ms:"), FakeProvider("google", prefix="g:")]
+    monkeypatch.setattr(translation_service, "PROVIDERS", providers)
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    database.init_db()
+    client = TestClient(api.app)
+
+    assert client.get("/api/settings").json()["translation_order"] == ["microsoft", "google", "offline"]
+    assert translation_service.translate(["Hello."], "en", "es")["provider"] == "microsoft"
+
+    res = client.put("/api/settings", json={"translation_order": ["google", "offline", "microsoft"]})
+    assert res.status_code == 200
+    assert res.json()["translation_order"] == ["google", "offline", "microsoft"]
+    assert client.get("/api/settings").json()["translation_order"] == ["google", "offline", "microsoft"]
+    assert translation_service.translate(["Good night."], "en", "es") == {
+        "translations": ["g:Good night."],
+        "provider": "google",
+    }
+
+    repeated = client.put("/api/settings", json={"translation_order": ["google", "google", "microsoft"]})
+    assert repeated.json()["detail"]["code"] == "invalid_translation_order"
+    assert client.put("/api/settings", json={"translation_order": ["deepl", "google", "microsoft"]}).status_code == 422
+    assert client.get("/api/settings").json()["translation_order"] == ["google", "offline", "microsoft"]
+
+
 def test_edge_tts_default_rate_is_90_percent():
     """Verifica que la velocidad base nativa de edge-tts sea 90% (-10%) por defecto y sea configurable."""
     from letha.services import tts as tts_service

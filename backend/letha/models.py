@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 Theme = Literal["light", "sepia", "dark"]
 FontSize = Literal["sm", "base", "lg", "xl"]
+TranslationEngine = Literal["microsoft", "google", "offline"]
 
 
 class WordTiming(BaseModel):
@@ -102,6 +103,7 @@ class AppSettings(BaseModel):
     font_size: FontSize = "base"
     show_translation: bool = True
     last_book_id: Optional[str] = None
+    translation_order: List[TranslationEngine] = ["microsoft", "google", "offline"]
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -115,6 +117,7 @@ class UpdateAppSettingsRequest(BaseModel):
     font_size: Optional[FontSize] = None
     show_translation: Optional[bool] = None
     last_book_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    translation_order: Optional[List[TranslationEngine]] = None
 
 
 class TranslationLanguage(BaseModel):

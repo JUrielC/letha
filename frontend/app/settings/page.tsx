@@ -8,8 +8,9 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { OfflineTranslationSection } from "@/components/OfflineTranslationSection";
+import { TranslationEngineSection } from "@/components/TranslationEngineSection";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { api, TranslationLanguage, UpdateInfo } from "@/lib/api";
+import { api, TranslationEngine, TranslationLanguage, UpdateInfo } from "@/lib/api";
 import { errorMessage, errorText, useI18n } from "@/lib/i18n";
 import { announceNativeLanguage, NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { savedSettings, savePreferences } from "@/lib/preferences";
@@ -173,6 +174,7 @@ function SettingsContent() {
   const [uninstallPhase, setUninstallPhase] = useState<"idle" | "uninstalling" | "started" | "error">("idle");
   const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
   const [languages, setLanguages] = useState<TranslationLanguage[]>([]);
+  const [translationOrder, setTranslationOrder] = useState<TranslationEngine[]>(["microsoft", "google", "offline"]);
 
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
@@ -195,6 +197,7 @@ function SettingsContent() {
         setAutoCheckUpdates(s.auto_check_updates ?? true);
         setNativeLanguage(s.native_language ?? null);
         setFontSize(s.font_size);
+        setTranslationOrder((current) => s.translation_order ?? current);
       })
       .catch((err) => {
         console.error("Error al cargar configuración:", err);
@@ -278,6 +281,13 @@ function SettingsContent() {
       .updateAppSettings({ native_language: code })
       .then(() => announceNativeLanguage(code))
       .catch((err) => setError(errorMessage(err, t, t.settings.saveFailed)));
+  };
+
+  const handleTranslationOrderChange = (order: TranslationEngine[]) => {
+    setTranslationOrder(order);
+    api.updateAppSettings({ translation_order: order }).catch((err) => {
+      setError(errorMessage(err, t, t.settings.saveFailed));
+    });
   };
 
   const handleAutoCheckUpdatesChange = (enabled: boolean) => {
@@ -973,6 +983,8 @@ function SettingsContent() {
                 </div>
               </div>
             </section>
+
+            <TranslationEngineSection order={translationOrder} onChange={handleTranslationOrderChange} />
 
             <section aria-labelledby="uninstall-title" className="flex flex-wrap gap-5 lg:gap-14 py-8">
               <div className="flex-1 min-w-[280px] max-w-[380px]">

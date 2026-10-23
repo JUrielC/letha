@@ -59,6 +59,7 @@ _ERROR_MESSAGES = {
     "invalid_voice": "Invalid voice name.",
     "voice_language_mismatch": "The chosen voice doesn't match the book's language.",
     "unsupported_native_language": "Unsupported native language.",
+    "invalid_translation_order": "The order must include each translation engine once.",
     "pdf_only": "Only PDF files are supported.",
     "unsupported_language": "Unsupported language.",
     "pdf_processing_failed": "The PDF could not be processed.",
@@ -152,6 +153,7 @@ def get_app_settings():
         boundary_type=database.get_boundary_type(),
         auto_check_updates=database.get_auto_check_updates(),
         native_language=database.get_native_language(),
+        translation_order=database.get_translation_order(),
         **database.get_ui_preferences(),
     )
 
@@ -160,6 +162,10 @@ def get_app_settings():
 def update_app_settings(payload: UpdateAppSettingsRequest):
     if payload.native_language is not None and payload.native_language not in translation_service.NATIVE_LANGUAGES:
         raise _api_error(status.HTTP_400_BAD_REQUEST, "unsupported_native_language")
+    if payload.translation_order is not None and sorted(payload.translation_order) != sorted(
+        database.TRANSLATION_ENGINES
+    ):
+        raise _api_error(status.HTTP_400_BAD_REQUEST, "invalid_translation_order")
     speed = (
         database.set_edge_base_speed(payload.edge_base_speed)
         if payload.edge_base_speed is not None
@@ -190,6 +196,11 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.native_language is not None
         else database.get_native_language()
     )
+    order = (
+        database.set_translation_order(payload.translation_order)
+        if payload.translation_order is not None
+        else database.get_translation_order()
+    )
     preferences = database.set_ui_preferences(
         theme=payload.theme,
         font_size=payload.font_size,
@@ -203,6 +214,7 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         boundary_type=b_type,
         auto_check_updates=check_updates,
         native_language=native,
+        translation_order=order,
         **preferences,
     )
 
