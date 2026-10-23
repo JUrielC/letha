@@ -13,6 +13,8 @@ export function applyTheme(t: Theme) {
   try {
     localStorage.setItem("letha_ui_theme", t);
   } catch {}
+  // La ventana de macOS lo recuerda para pintar su pantalla de carga antes de que exista la interfaz
+  (window as any).webkit?.messageHandlers?.lethaTheme?.postMessage(t);
   window.dispatchEvent(new CustomEvent("letha_theme_change", { detail: t }));
 }
 

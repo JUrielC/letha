@@ -13,7 +13,50 @@ private let readyPrefix = "LETHA_APP_READY "
 // El servidor sale con este código al actualizarse (UPDATE_EXIT_CODE en updates.py); el actualizador reabre la app
 private let updateExitCode: Int32 = 75
 
-private let brandHTML = #"<div class="brand"><div class="logo"><svg viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></svg></div>Letha</div>"#
+private let brandHTML = #"<div class="brand"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="2.4" rx="1.2" fill="var(--ink)"/><rect x="1" y="9.2" width="18" height="5.6" rx="2" fill="var(--logo-hl)"/><rect x="2" y="10.8" width="15" height="2.4" rx="1.2" fill="var(--accent)"/><rect x="2" y="17.6" width="11" height="2.4" rx="1.2" fill="var(--ink)"/></svg>Letha</div>"#
+
+private let themeDefaultsKey = "theme"
+
+private struct ThemeStyle {
+    let css: String
+    let windowColor: NSColor
+}
+
+// Copia de los tokens de frontend/app/globals.css: estas pantallas se muestran antes de que cargue la interfaz
+private let themeStyles: [String: ThemeStyle] = [
+    "light": ThemeStyle(
+        css: "--base:#f1f3f6;--ink:#1a1d20;--muted:#5a6068;--accent:#2d3748;--logo-hl:rgba(45,55,72,0.14);--danger:#b42318;--dialog:linear-gradient(180deg,rgba(255,255,255,0.74) 0%,rgba(255,255,255,0.50) 100%);--ring-dialog:inset 0 0 0 1px rgba(255,255,255,0.85),inset 0 1px 0 rgba(255,255,255,0.95),0 32px 80px rgba(18,20,24,0.20);--ambient:radial-gradient(850px 700px at 4% 0%,rgba(195,205,218,0.55) 0%,rgba(195,205,218,0) 65%),radial-gradient(950px 750px at 96% 8%,rgba(165,178,192,0.35) 0%,rgba(165,178,192,0) 62%),radial-gradient(1100px 800px at 70% 60%,rgba(218,222,228,0.65) 0%,rgba(218,222,228,0) 65%),radial-gradient(950px 750px at 2% 94%,rgba(188,198,208,0.48) 0%,rgba(188,198,208,0) 62%),linear-gradient(160deg,#f7f8fa 0%,#ebeef2 100%)",
+        windowColor: NSColor(red: 0xf1 / 255, green: 0xf3 / 255, blue: 0xf6 / 255, alpha: 1)
+    ),
+    "sepia": ThemeStyle(
+        css: "--base:#efe8dc;--ink:#3a2e20;--muted:#6d5c47;--accent:#544434;--logo-hl:rgba(214,180,110,0.4);--danger:#9b2a1f;--dialog:linear-gradient(180deg,rgba(255,250,242,0.74) 0%,rgba(250,244,232,0.52) 100%);--ring-dialog:inset 0 0 0 1px rgba(255,255,255,0.80),inset 0 1px 0 rgba(255,255,255,0.90),0 32px 80px rgba(58,46,32,0.20);--ambient:radial-gradient(850px 700px at 4% 0%,rgba(214,185,150,0.55) 0%,rgba(214,185,150,0) 65%),radial-gradient(950px 750px at 96% 8%,rgba(175,155,130,0.30) 0%,rgba(175,155,130,0) 62%),radial-gradient(1100px 800px at 70% 60%,rgba(230,210,180,0.65) 0%,rgba(230,210,180,0) 65%),radial-gradient(950px 750px at 2% 94%,rgba(200,175,145,0.45) 0%,rgba(200,175,145,0) 62%),linear-gradient(160deg,#f4eee4 0%,#eae2d4 100%)",
+        windowColor: NSColor(red: 0xef / 255, green: 0xe8 / 255, blue: 0xdc / 255, alpha: 1)
+    ),
+    "dark": ThemeStyle(
+        css: "--base:#0d0e11;--ink:#e6e9ed;--muted:#939ba6;--accent:#9ab3cf;--logo-hl:rgba(154,179,207,0.22);--danger:#f0a093;--dialog:linear-gradient(180deg,rgba(28,32,38,0.75) 0%,rgba(16,18,22,0.55) 100%);--ring-dialog:inset 0 0 0 1px rgba(255,255,255,0.09),inset 0 1px 0 rgba(255,255,255,0.14),0 32px 80px rgba(0,0,0,0.55);--ambient:radial-gradient(850px 700px at 4% 0%,rgba(65,76,92,0.45) 0%,rgba(65,76,92,0) 65%),radial-gradient(950px 750px at 96% 8%,rgba(42,52,65,0.55) 0%,rgba(42,52,65,0) 62%),radial-gradient(1100px 800px at 70% 60%,rgba(35,42,54,0.45) 0%,rgba(35,42,54,0) 65%),radial-gradient(950px 750px at 2% 94%,rgba(30,38,48,0.65) 0%,rgba(30,38,48,0) 62%),linear-gradient(160deg,#101216 0%,#090a0d 100%)",
+        windowColor: NSColor(red: 0x0d / 255, green: 0x0e / 255, blue: 0x11 / 255, alpha: 1)
+    ),
+]
+
+private var savedThemeStyle: ThemeStyle {
+    themeStyles[UserDefaults.standard.string(forKey: themeDefaultsKey) ?? ""] ?? themeStyles["light"]!
+}
+
+func loadingPageHTML(_ content: String) -> String {
+    """
+    <!doctype html><html><head><meta charset="utf-8"><style>
+    :root{\(savedThemeStyle.css)}
+    body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background-color:var(--base);background-image:var(--ambient);color:var(--ink);font-family:-apple-system,system-ui;-webkit-font-smoothing:antialiased}
+    .brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:600;letter-spacing:-0.01em}
+    .brand svg{width:24px;height:24px}
+    .spinner{width:28px;height:28px;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .muted{font-size:14px;line-height:1.6;color:var(--muted)}
+    .card{max-width:440px;margin:0 24px;padding:28px;border-radius:30px;background:var(--dialog);box-shadow:var(--ring-dialog)}
+    .card h2{margin:0 0 8px;font-family:ui-serif,"New York",Georgia,serif;font-size:24px;font-weight:400;color:var(--danger)}
+    </style></head><body>\(content)</body></html>
+    """
+}
 
 private let logURL = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Logs/letha.log")
@@ -77,13 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Letha"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = NSColor(red: 0x0a / 255, green: 0x17 / 255, blue: 0x29 / 255, alpha: 1)
+        window.backgroundColor = savedThemeStyle.windowColor
         window.minSize = NSSize(width: 800, height: 550)
         window.center()
         window.isReleasedWhenClosed = false
 
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        config.userContentController.add(self, name: "lethaTheme")
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.uiDelegate = self
@@ -228,21 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPage(_ content: String) {
-        let html = """
-        <!doctype html><html><head><meta charset="utf-8"><style>
-        body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#0a1729;color:#eaf1fa;font-family:-apple-system,system-ui;-webkit-font-smoothing:antialiased}
-        svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-        .brand{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700;letter-spacing:-0.025em}
-        .logo{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#0a1729;background:linear-gradient(135deg,#1ea7e8 0%,#64c7f5 100%)}
-        .logo svg{width:20px;height:20px}
-        .spinner{width:32px;height:32px;color:#1ea7e8;animation:spin 1s linear infinite}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .muted{font-size:14px;line-height:1.6;color:#93a3b8}
-        .card{max-width:500px;margin:0 24px;padding:24px;border-radius:16px;background:#0e1d33;border:1px solid rgba(248,113,113,0.35)}
-        .card h2{margin:0 0 12px;font-size:18px;color:#f87171}
-        </style></head><body>\(content)</body></html>
-        """
-        webView.loadHTMLString(html, baseURL: nil)
+        webView.loadHTMLString(loadingPageHTML(content), baseURL: nil)
     }
 
     private func resolveCommand() -> String {
@@ -293,6 +323,16 @@ extension AppDelegate: WKUIDelegate {
         panel.beginSheetModal(for: window) { response in
             completionHandler(response == .OK ? panel.urls : nil)
         }
+    }
+}
+
+extension AppDelegate: WKScriptMessageHandler {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard let theme = message.body as? String, themeStyles[theme] != nil else { return }
+        UserDefaults.standard.set(theme, forKey: themeDefaultsKey)
     }
 }
 
