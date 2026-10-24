@@ -18,6 +18,32 @@ Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus l
 
 ## Instalación
 
+### Requisitos
+
+| | macOS | Windows |
+|---|---|---|
+| Sistema | macOS 13 Ventura o posterior | Windows 10 u 11 de 64 bits, en Intel o AMD (Windows en ARM no está probado) |
+| Equipo | Mac con Apple Silicon (M1 o posterior) | Procesador de 4 núcleos o más |
+| Memoria | 8 GB de RAM recomendados | 8 GB de RAM recomendados |
+| Internet | Para instalar y actualizar, y para las voces y la traducción en línea | Igual que en macOS |
+
+> [!WARNING]
+> **macOS 12 Monterey o anterior:** desde la versión 1.4.0, Letha puede no instalarse ni actualizarse en estos sistemas, porque los componentes de las voces sin conexión ya no se publican para ellos. Si tienes macOS 12, actualiza a macOS 13 o posterior: todos los Mac con Apple Silicon pueden hacerlo.
+
+#### Para usar Letha sin conexión
+
+Las voces y la traducción sin conexión se descargan antes desde **Configuración**:
+
+| Descarga | Espacio |
+|---|---|
+| Voces sin conexión (los cinco idiomas) | 354 MB |
+| Traducción sin conexión | 242 MB si tu idioma nativo es inglés; hasta 455 MB si es español, francés, italiano o portugués |
+| Audio que se va generando al escuchar | Unos 22 MB por hora |
+
+- **Memoria:** con las voces sin conexión, Letha usa unos 700 MB de RAM, y unos 300 MB más al traducir sin conexión.
+- **Procesador:** la voz se genera en el equipo y tiene que ir más rápido de lo que se escucha. En un Mac con Apple Silicon va sobrada: un M3 genera una página de 95 segundos de audio en 22. En Windows conviene un procesador de 4 núcleos o más de 2020 en adelante (por ejemplo, un Ryzen 5 de la serie 4000 o un Core i5 de 11.ª generación). Un Ryzen 7 7730U tarda entre la mitad y algo más del tiempo de escucha, según qué tan ocupado esté el equipo; en equipos más lentos puede haber pausas entre las partes de una página.
+- **Tarjeta gráfica:** no se usa.
+
 ### En macOS (Apple Silicon)
 
 Abre la app **Terminal** (⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
