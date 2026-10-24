@@ -75,7 +75,10 @@ jobs:
           ## Cambios
 
           EOF
-          git log --no-merges --pretty='%s' "${PREV_TAG:+$PREV_TAG..}$GITHUB_REF_NAME" > changes.txt
+          # Las novedades las ve el usuario en la app: solo commits que cambian la app, sin subidas de versión
+          git log --no-merges --pretty='%s' "${PREV_TAG:+$PREV_TAG..}$GITHUB_REF_NAME" \
+            -- backend/letha frontend native scripts/install.sh scripts/install.ps1 \
+            | grep -v '^Subir la versión' > changes.txt || true
           sed 's/^/- /' changes.txt >> release-notes.md
           ASSETS=("dist/letha-${VERSION}-py3-none-any.whl" dist/install.sh dist/install.ps1)
           python3 scripts/update_manifest.py \
