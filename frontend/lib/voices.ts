@@ -9,7 +9,8 @@ export function personaName(shortName: string | null | undefined, voices: VoiceI
 
 export function voiceDetails(voice: VoiceItem, locale: UiLocale, t: Messages): string {
   const gender = voice.gender === "Female" ? t.voices.female : voice.gender === "Male" ? t.voices.male : voice.gender;
-  return `${languageName(voice.locale, locale)} · ${gender}`;
+  const details = `${languageName(voice.locale, locale)} · ${gender}`;
+  return voice.offline ? `${details} · ${t.voices.offline}` : details;
 }
 
 export function voiceLabel(voice: VoiceItem, locale: UiLocale, t: Messages): string {

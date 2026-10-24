@@ -8,6 +8,7 @@ Lector de libros en PDF y audiolibro interactivo para macOS y Windows. Lee tus l
 
 - **Extracción limpia de PDFs:** Usa `PyMuPDF` para estructurar páginas, detectar la tabla de contenidos (TOC) y filtrar encabezados y números de página que arruinarían la lectura de voz.
 - **Voces Neurales Gratuitas:** Integración con `edge-tts`, con decenas de voces humanas de alta fidelidad en inglés, español, francés, italiano y portugués.
+- **Voces sin conexión:** Desde **Configuración → Voces sin conexión** puedes descargar el modelo [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache 2.0, unos 354 MB) para escuchar tus libros sin internet en los cinco idiomas. Sus voces aparecen en el selector marcadas como sin conexión y se publican en el release [`voces-kokoro-1`](https://github.com/JUrielC/letha/releases/tag/voces-kokoro-1).
 - **Efecto Karaoke (Sincronización exacta):** Captura eventos de `SentenceBoundary` para sincronizar y resaltar la frase que se está reproduciendo en cada milisegundo con auto-desplazamiento suave.
 - **Navegación Interactiva:** Haz clic en cualquier oración del texto para saltar la reproducción inmediatamente a ese punto exacto.
 - **Experiencia de Lectura:** Modos **Claro**, **Sepia cálido** y **Oscuro**, tamaños de tipografía ajustables y control de velocidad de reproducción (0.75x a 2.0x).
@@ -130,6 +131,10 @@ Los modelos del release [`modelos-traduccion-1`](https://github.com/JUrielC/leth
 
 Referencia: Jörg Tiedemann y Santhosh Thottingal, *OPUS-MT — Building open translation services for the World*, EAMT 2020.
 
+### Voces sin conexión
+
+Los archivos del release [`voces-kokoro-1`](https://github.com/JUrielC/letha/releases/tag/voces-kokoro-1) son el modelo [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) de hexgrad y sus voces, en la exportación a ONNX de [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) (release `model-files-v1.1`), sin modificaciones. El modelo se distribuye bajo [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
 ### Fuentes
 
 Las fuentes [Instrument Sans](https://fonts.google.com/specimen/Instrument+Sans) y [Literata](https://fonts.google.com/specimen/Literata) se incluyen en la interfaz compilada y se distribuyen bajo la [SIL Open Font License 1.1](https://openfontlicense.org).
@@ -142,6 +147,10 @@ Las fuentes [Instrument Sans](https://fonts.google.com/specimen/Instrument+Sans)
 | [edge-tts](https://github.com/rany2/edge-tts) | Voces neurales de Microsoft Edge | LGPL-3.0 |
 | [CTranslate2](https://github.com/OpenNMT/CTranslate2) (OpenNMT) | Traducción sin conexión | MIT |
 | [SentencePiece](https://github.com/google/sentencepiece) (Google) | Tokenización de los modelos de traducción | Apache 2.0 |
+| [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) | Voces sin conexión | MIT |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) (Microsoft) | Ejecución del modelo de voz | MIT |
+| [eSpeak NG](https://github.com/espeak-ng/espeak-ng) (vía espeakng-loader), [phonemizer](https://github.com/bootphon/phonemizer) | Pronunciación de las voces sin conexión | GPL-3.0 |
+| [lameenc](https://github.com/chrisstaite/lameenc) ([LAME](https://lame.sourceforge.io)) | Audio MP3 de las voces sin conexión | LGPL-3.0 |
 | [FastAPI](https://github.com/fastapi/fastapi), [Pydantic](https://github.com/pydantic/pydantic) | API local | MIT |
 | [Uvicorn](https://github.com/encode/uvicorn) | Servidor local | BSD-3-Clause |
 | [python-multipart](https://github.com/Kludex/python-multipart), [aiofiles](https://github.com/Tinche/aiofiles) | Subida y lectura de archivos | Apache 2.0 |

@@ -26,6 +26,7 @@ from letha.models import (
     ChapterDetail,
     ChapterTranslations,
     OfflineTranslation,
+    OfflineVoices,
     SkipUpdateRequest,
     TranslationLanguage,
     UninstallRequest,
@@ -35,7 +36,7 @@ from letha.models import (
     UpdateProgressRequest,
     VoiceItem,
 )
-from letha.services import offline_translation
+from letha.services import offline_translation, offline_voices
 from letha.services import pdf as pdf_service
 from letha.services import translation as translation_service
 from letha.services import tts as tts_service
@@ -70,6 +71,7 @@ _ERROR_MESSAGES = {
     "chapter_not_found": "Chapter not found.",
     "native_language_required": "Set your native language to see translations.",
     "audio_not_ready": "This chapter's audio hasn't been generated for the selected voice yet.",
+    "offline_voices_missing": "The offline voices aren't downloaded.",
 }
 
 
@@ -303,8 +305,33 @@ def uninstall(payload: UninstallRequest):
 
 @app.get("/api/voices", response_model=List[VoiceItem])
 async def get_voices():
-    voices = await tts_service.list_available_voices()
+    # Sin internet se muestra la última lista conocida para no perder la voz de cada libro en el selector
+    try:
+        online = await tts_service.list_available_voices()
+        database.set_setting("online_voices", json.dumps(online))
+    except Exception:
+        online = json.loads(database.get_setting("online_voices") or "[]")
+    voices = online + offline_voices.list_voices()
+    languages = tts_service.SUPPORTED_LANGUAGES
+    voices.sort(key=lambda v: (languages.index(tts_service.voice_language(v["short_name"])), v.get("offline", False)))
     return voices
+
+
+@app.get("/api/voices/offline", response_model=OfflineVoices)
+def get_offline_voices():
+    return offline_voices.status()
+
+
+@app.post("/api/voices/offline", response_model=OfflineVoices)
+def download_offline_voices():
+    offline_voices.start_download()
+    return offline_voices.status()
+
+
+@app.delete("/api/voices/offline", response_model=OfflineVoices)
+def delete_offline_voices():
+    offline_voices.delete()
+    return offline_voices.status()
 
 
 @app.get("/api/voices/preview")
@@ -326,6 +353,8 @@ async def preview_voice(voice: str = DEFAULT_VOICE):
                 output_audio_path=preview_file,
                 output_alignment_path=preview_align,
             )
+        except LookupError:
+            raise _api_error(status.HTTP_409_CONFLICT, "offline_voices_missing")
         finally:
             _active_jobs -= 1
     return FileResponse(preview_file, media_type="audio/mpeg")
@@ -538,9 +567,12 @@ async def synthesize_chapter(
             if not (part_audio_file.exists() and part_meta_file.exists()):
                 p_indices = groups[p]
                 p_texts = [base_texts[i] for i in p_indices]
-                p_bytes, p_dur, p_timings = await tts_service.synthesize_sentence_group(
-                    p_texts, voice=target_voice, speed=1.0
-                )
+                try:
+                    p_bytes, p_dur, p_timings = await tts_service.synthesize_sentence_group(
+                        p_texts, voice=target_voice, speed=1.0
+                    )
+                except LookupError:
+                    raise _api_error(status.HTTP_409_CONFLICT, "offline_voices_missing")
                 part_audio_file.parent.mkdir(parents=True, exist_ok=True)
                 part_audio_file.write_bytes(p_bytes)
                 part_meta_file.write_text(

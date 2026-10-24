@@ -90,6 +90,7 @@ class VoiceItem(BaseModel):
     short_name: str
     gender: str
     locale: str
+    offline: bool = False
 
 
 class AppSettings(BaseModel):
@@ -123,6 +124,13 @@ class UpdateAppSettingsRequest(BaseModel):
 class TranslationLanguage(BaseModel):
     code: str
     name: str
+
+
+class OfflineVoices(BaseModel):
+    size: int
+    status: Literal["missing", "downloading", "installed", "error"]
+    progress: float = 0.0
+    error: Optional[str] = None
 
 
 class OfflineTranslation(BaseModel):

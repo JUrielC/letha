@@ -42,6 +42,7 @@ export const es: Messages = {
     female: "Mujer",
     male: "Hombre",
     narrator: "Narrador",
+    offline: "Sin conexión",
   },
   library: {
     title: "Tu biblioteca",
@@ -221,6 +222,9 @@ export const es: Messages = {
     offlineShared: (languages) => `También sirve para ${languages}.`,
     offlineCredits: "Modelos de traducción de la Universidad de Helsinki.",
     offlineLoadFailed: "No se pudieron cargar los modelos sin conexión.",
+    offlineVoices: "Voces sin conexión",
+    offlineVoicesHint: "Descarga voces para escuchar tus libros sin internet. Aparecen en el selector de voz marcadas como sin conexión.",
+    offlineVoicesCredits: "Voces del proyecto Kokoro.",
     footer: "Las voces neurales vienen de Microsoft Edge TTS y necesitan conexión a internet.",
   },
   reader: {
@@ -276,6 +280,7 @@ export const es: Messages = {
     chapter_not_found: "No se encontró la página.",
     native_language_required: "Configura tu idioma nativo para ver traducciones.",
     audio_not_ready: "El audio de esta página todavía no está listo.",
+    offline_voices_missing: "Descarga las voces sin conexión en Configuración para usar esta voz.",
     not_installer_copy: "Esta copia no se instaló con el instalador de Letha; actualízala con git pull.",
     unsupported_platform: "La actualización desde la app solo está disponible en macOS y Windows.",
     open_from_icon: "Abre Letha desde su icono para poder actualizarla desde la app.",

@@ -8,6 +8,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { OfflineTranslationSection } from "@/components/OfflineTranslationSection";
+import { OfflineVoicesSection } from "@/components/OfflineVoicesSection";
 import { TranslationEngineSection } from "@/components/TranslationEngineSection";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api, TranslationEngine, TranslationLanguage, UpdateInfo } from "@/lib/api";
@@ -526,6 +527,8 @@ function SettingsContent() {
             </section>
 
             <OfflineTranslationSection nativeLanguage={nativeLanguage} />
+
+            <OfflineVoicesSection />
 
             <OptionGrid
               name="reading-mode"

@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import edge_tts
 
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
+from letha.services import offline_voices
 
 # edge-tts genera audio MP3 CBR a 24kHz 48kbps mono = 6000 bytes por segundo exactos
 BYTES_PER_SECOND = 6000.0
@@ -68,11 +69,15 @@ SUPPORTED_LANGUAGES = tuple(PRIMARY_LOCALES)
 
 
 def voice_language(voice: str) -> str:
+    if offline_voices.is_voice(voice):
+        return offline_voices.language_of(voice)
     return voice.split("-")[0].lower()
 
 
 
 def _extract_persona_name(short_name: str) -> str:
+    if offline_voices.is_voice(short_name):
+        return offline_voices.persona(short_name)
     parts = short_name.split("-")
     raw = parts[2] if len(parts) >= 3 else short_name
     raw = re.sub(r"(Multilingual)?Neural$", "", raw)
@@ -231,6 +236,10 @@ async def synthesize_sentence_group(
     if not clean_texts:
         return b"", 0.0, [(0.0, 0.0) for _ in sentence_texts]
 
+    if offline_voices.is_voice(voice):
+        texts = [_speakable(s.strip()) if s.strip() else "" for s in sentence_texts]
+        return await asyncio.to_thread(offline_voices.synthesize, texts, voice, speed * EDGE_BASE_SPEED)
+
     joined_text = " ".join(_speakable(s) for s in clean_texts)
     rate_str = format_rate(speed)
     active_boundary = BOUNDARY_TYPE
@@ -362,6 +371,19 @@ async def synthesize_text_to_audio(
     """
     if not text.strip():
         return 0.0, []
+
+    if offline_voices.is_voice(voice):
+        audio, duration, timings = await asyncio.to_thread(
+            offline_voices.synthesize, [text], voice, speed * EDGE_BASE_SPEED
+        )
+        alignment = [{"index": 0, "text": text, "start": timings[0][0], "end": timings[0][1]}]
+        if output_audio_path is not None:
+            output_audio_path.parent.mkdir(parents=True, exist_ok=True)
+            output_audio_path.write_bytes(audio)
+        if output_alignment_path is not None:
+            output_alignment_path.parent.mkdir(parents=True, exist_ok=True)
+            output_alignment_path.write_text(json.dumps(alignment, ensure_ascii=False, indent=2), encoding="utf-8")
+        return duration, alignment
 
     rate_str = format_rate(speed)
     chunks = _split_text_into_chunks(text, MAX_CHUNK_CHARS)

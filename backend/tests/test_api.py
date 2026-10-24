@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import platform
 import shlex
 import sqlite3
@@ -300,6 +301,7 @@ def test_voices_limited_to_supported_languages(monkeypatch):
         ]
 
     monkeypatch.setattr(tts_service.edge_tts, "list_voices", fake_list_voices)
+    database.init_db()
     client = TestClient(api.app)
 
     res = client.get("/api/voices")
@@ -1543,3 +1545,153 @@ def test_edge_tts_default_rate_is_90_percent():
     assert tts_service.AUDIO_CACHE_TAG == "0.90"
 
 
+class FakeKokoro:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, text, voice, speed, lang):
+        import numpy as np
+
+        self.calls.append((text, voice, speed, lang))
+        seconds = np.arange(int(len(text) / 20 * 24000)) / 24000
+        return (0.3 * np.sin(2 * np.pi * 220 * seconds)).astype(np.float32), 24000
+
+
+def install_fake_offline_voices(monkeypatch):
+    from letha.services import offline_voices
+
+    directory = config.CACHE_DIR / "voice-models" / "kokoro"
+    directory.mkdir(parents=True)
+    for name in offline_voices.FILES:
+        (directory / name).write_bytes(b"x")
+    fake = FakeKokoro()
+    monkeypatch.setattr(offline_voices, "_load", lambda: fake)
+    return fake
+
+
+def test_offline_voices_have_their_own_names_and_languages():
+    from letha.services import offline_voices
+    from letha.services import tts as tts_service
+
+    assert tts_service.voice_language("kokoro-ef_dora") == "es"
+    assert tts_service.voice_language("kokoro-bf_emma") == "en"
+    assert tts_service.voice_language("kokoro-pm_santa") == "pt"
+    assert tts_service._extract_persona_name("kokoro-ef_dora") == "Dora"
+    assert not offline_voices.is_voice("kokoro-zf_xiaobei")
+    assert {offline_voices.language_of(offline_voices.VOICE_PREFIX + v) for v in offline_voices.VOICES} == set(
+        tts_service.SUPPORTED_LANGUAGES
+    )
+
+
+def test_offline_voices_join_the_list_once_downloaded(monkeypatch):
+    from letha.services import tts as tts_service
+
+    async def fake_list_voices():
+        return [
+            {"ShortName": name, "Locale": name.rsplit("-", 1)[0], "Gender": "Female"}
+            for name in ("es-MX-DaliaNeural", "en-US-AvaNeural")
+        ]
+
+    monkeypatch.setattr(tts_service.edge_tts, "list_voices", fake_list_voices)
+    database.init_db()
+    client = TestClient(api.app)
+    assert [v["short_name"] for v in client.get("/api/voices").json()] == ["es-MX-DaliaNeural", "en-US-AvaNeural"]
+
+    install_fake_offline_voices(monkeypatch)
+    voices = client.get("/api/voices").json()
+    names = [v["short_name"] for v in voices]
+    assert (
+        names.index("es-MX-DaliaNeural")
+        < names.index("kokoro-ef_dora")
+        < names.index("en-US-AvaNeural")
+        < names.index("kokoro-af_heart")
+    )
+    dora = next(v for v in voices if v["short_name"] == "kokoro-ef_dora")
+    assert dora == {"name": "Dora", "short_name": "kokoro-ef_dora", "gender": "Female", "locale": "es-419", "offline": True}
+    assert next(v for v in voices if v["short_name"] == "es-MX-DaliaNeural")["offline"] is False
+
+    # Sin internet se conserva la última lista conocida de voces en línea
+    async def no_connection():
+        raise OSError("sin red")
+
+    monkeypatch.setattr(tts_service.edge_tts, "list_voices", no_connection)
+    assert [v["short_name"] for v in client.get("/api/voices").json()] == names
+
+
+def test_offline_voice_reads_a_page_sentence_by_sentence(monkeypatch):
+    from letha.services import tts as tts_service
+
+    database.init_db()
+    client = TestClient(api.app)
+    files = {"file": ("libro.pdf", io.BytesIO(create_sample_pdf()), "application/pdf")}
+    book = client.post("/api/books/upload", files=files, data={"voice": "kokoro-ef_dora", "language": "es"}).json()
+    synthesize = f"/api/books/{book['id']}/chapters/0/synthesize?voice=kokoro-ef_dora"
+
+    missing = client.post(synthesize)
+    assert missing.status_code == 409
+    assert missing.json()["detail"]["code"] == "offline_voices_missing"
+
+    fake = install_fake_offline_voices(monkeypatch)
+    res = client.post(synthesize).json()
+    assert res["is_complete"] is True
+    sentences = res["sentences"]
+    assert all(s["end"] > s["start"] for s in sentences)
+    assert all(a["end"] <= b["start"] + 0.001 for a, b in zip(sentences, sentences[1:]))
+    assert 0 <= res["duration"] - sentences[-1]["end"] < 0.5
+    assert {call[1:] for call in fake.calls} == {("ef_dora", tts_service.get_edge_base_speed(), "es-419")}
+
+    audio = client.get(res["audio_url"])
+    assert audio.status_code == 200
+    assert audio.content[:1] == b"\xff"
+
+
+def test_offline_voices_download_is_verified_before_installing(monkeypatch, tmp_path):
+    from letha.services import offline_voices
+
+    files = {"kokoro-v1.0.onnx": b"modelo", "voices-v1.0.bin": b"voces"}
+    for name, data in files.items():
+        (tmp_path / name).write_bytes(data)
+    monkeypatch.setattr(offline_voices, "FILES_URL", tmp_path.as_uri())
+    monkeypatch.setattr(offline_voices, "_download", None)
+    monkeypatch.setattr(
+        offline_voices,
+        "FILES",
+        {name: {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()} for name, data in files.items()},
+    )
+    installed_dir = config.CACHE_DIR / "voice-models" / "kokoro"
+    database.init_db()
+    client = TestClient(api.app)
+
+    def finished():
+        for _ in range(200):
+            item = client.get("/api/voices/offline").json()
+            if item["status"] != "downloading":
+                return item
+            time.sleep(0.05)
+        raise AssertionError("la descarga no terminó")
+
+    assert client.get("/api/voices/offline").json() == {"size": 11, "status": "missing", "progress": 0.0, "error": None}
+    assert client.post("/api/voices/offline").status_code == 200
+    assert finished()["status"] == "installed"
+    assert offline_voices.list_voices()
+
+    assert client.delete("/api/voices/offline").json()["status"] == "missing"
+    assert not installed_dir.exists()
+
+    monkeypatch.setitem(offline_voices.FILES, "voices-v1.0.bin", {"size": 5, "sha256": "0" * 64})
+    client.post("/api/voices/offline")
+    failed = finished()
+    assert (failed["status"], failed["error"]) == ("error", "checksum_mismatch")
+    assert not installed_dir.exists()
+
+
+@pytest.mark.skipif(not os.environ.get("LETHA_KOKORO_MODELS"), reason="Requiere los archivos del modelo descargados")
+def test_offline_voice_with_the_real_model(monkeypatch):
+    from letha.services import offline_voices
+
+    monkeypatch.setattr(offline_voices, "_installed_dir", lambda: Path(os.environ["LETHA_KOKORO_MODELS"]))
+    monkeypatch.setattr(offline_voices, "_kokoro", None)
+    audio, duration, timings = offline_voices.synthesize(["Hola, ¿cómo estás?", "Muy bien."], "kokoro-ef_dora", 0.9)
+    assert audio[:1] == b"\xff"
+    assert duration > 1
+    assert timings[0][1] <= timings[1][0] and timings[1][1] == duration

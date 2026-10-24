@@ -65,6 +65,14 @@ export interface VoiceItem {
   short_name: string;
   gender: string;
   locale: string;
+  offline?: boolean;
+}
+
+export interface OfflineVoices {
+  size: number;
+  status: "missing" | "downloading" | "installed" | "error";
+  progress: number;
+  error?: string | null;
 }
 
 export interface AppSettings {
@@ -185,6 +193,12 @@ export const api = {
   },
 
   getVoices: () => request<VoiceItem[]>("/api/voices"),
+
+  getOfflineVoices: () => request<OfflineVoices>("/api/voices/offline"),
+
+  downloadOfflineVoices: () => request<OfflineVoices>("/api/voices/offline", { method: "POST" }),
+
+  deleteOfflineVoices: () => request<OfflineVoices>("/api/voices/offline", { method: "DELETE" }),
 
   getAppSettings: () => request<AppSettings>("/api/settings"),
 
