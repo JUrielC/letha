@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sparkles, X } from "lucide-react";
 import { api, UpdateInfo } from "@/lib/api";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { usePlayer } from "@/components/Player";
 import { useI18n } from "@/lib/i18n";
 
 const DISMISSED_KEY = "letha_update_dismissed";
@@ -15,6 +16,7 @@ export function UpdateNotifier() {
   const [hidden, setHidden] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const { t } = useI18n();
+  const player = usePlayer();
 
   useEffect(() => {
     api
@@ -57,7 +59,7 @@ export function UpdateNotifier() {
     <>
       <div
         role="status"
-        className="glass-strong fixed bottom-5 right-5 z-40 flex items-center gap-2 pl-4 pr-1.5 py-1.5 rounded-full max-w-[calc(100vw-40px)]"
+        className={`glass-strong fixed ${player.bookId ? "bottom-28" : "bottom-5"} right-5 z-40 flex items-center gap-2 pl-4 pr-1.5 py-1.5 rounded-full max-w-[calc(100vw-40px)]`}
         style={{ background: "var(--dialog)", boxShadow: "var(--ring-dialog)", color: "var(--ink)" }}
       >
         <Sparkles className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} />

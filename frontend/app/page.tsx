@@ -12,12 +12,14 @@ import {
   getBaseUrl,
 } from "@/lib/api";
 import { useOfflineMode } from "@/components/OfflineMode";
+import { usePlayer } from "@/components/Player";
 import { useI18n } from "@/lib/i18n";
 import { personaName } from "@/lib/voices";
 import {
   BookOpen,
   ChevronDown,
   Loader2,
+  Pause,
   Play,
   Plus,
   Search,
@@ -73,6 +75,12 @@ export default function HomePage() {
   const { t, locale } = useI18n();
   const { offlineMode } = useOfflineMode();
   const offlineModeSeenRef = useRef(offlineMode);
+  const player = usePlayer();
+
+  const listen = (id: string) => {
+    if (player.bookId === id && player.isPlaying) player.togglePlay();
+    else player.openBook(id, { autoplay: true });
+  };
 
   const loadBooks = async () => {
     try {
@@ -105,6 +113,7 @@ export default function HomePage() {
   const handleDelete = async (id: string) => {
     try {
       await api.deleteBook(id);
+      if (player.bookId === id) player.close();
       setBooks((prev) => prev.filter((b) => b.id !== id));
     } catch (err) {
       console.error("Error al eliminar libro:", err);
@@ -156,6 +165,7 @@ export default function HomePage() {
   }, [continueBook]);
 
   const continueInfo = continueBook ? pageInfo(continueBook) : null;
+  const playingContinue = !!continueBook && player.bookId === continueBook.id && player.isPlaying;
   const continuePalette = continueBook ? pickCoverPalette(continueBook.id) : null;
   const continuePersona = personaName(continueBook?.voice, voices, t);
 
@@ -369,9 +379,10 @@ export default function HomePage() {
               )}
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
-                <Link
-                  href={`/reader?id=${continueBook.id}`}
-                  className="glbtn glbtn-primary inline-flex items-center gap-3 h-12 pr-[22px] pl-2 rounded-full font-medium text-[15px] no-underline"
+                <button
+                  type="button"
+                  onClick={() => listen(continueBook.id)}
+                  className="glbtn glbtn-primary inline-flex items-center gap-3 h-12 pr-[22px] pl-2 rounded-full border-0 font-medium text-[15px] cursor-pointer"
                   style={{
                     background: "var(--btn-primary)",
                     boxShadow: "var(--ring-primary)",
@@ -383,10 +394,14 @@ export default function HomePage() {
                     className="w-[34px] h-[34px] rounded-full flex items-center justify-center"
                     style={{ background: "var(--icon-chip)" }}
                   >
-                    <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                    {playingContinue ? (
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                    )}
                   </span>
-                  <span>{t.library.resumeAt(continueInfo.current)}</span>
-                </Link>
+                  <span>{playingContinue ? t.reader.pause : t.library.listenFrom(continueInfo.current)}</span>
+                </button>
 
                 <Link
                   href={`/reader?id=${continueBook.id}`}

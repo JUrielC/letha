@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { UploadCloud, X, Loader2, FileText, Check, Play, Pause } from "lucide-react";
 import { api, VoiceItem } from "@/lib/api";
 import { useOfflineMode } from "@/components/OfflineMode";
+import { usePlayer } from "@/components/Player";
 import { errorMessage, languageName, useI18n } from "@/lib/i18n";
 import { voiceDetails } from "@/lib/voices";
 
@@ -37,6 +38,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const { t, locale } = useI18n();
   const { offlineMode } = useOfflineMode();
+  const player = usePlayer();
 
   useEffect(() => {
     if (isOpen && initialFile) {
@@ -118,6 +120,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
     }
     setSelectedVoice(v);
     setPreviewingVoice(v);
+    if (player.isPlaying) player.togglePlay();
     try {
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();

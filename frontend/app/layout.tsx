@@ -4,7 +4,9 @@ import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 import { KeepAlive } from "@/components/KeepAlive";
 import { NativeLanguageGate } from "@/components/NativeLanguageGate";
+import { MiniPlayer } from "@/components/MiniPlayer";
 import { OfflineModeProvider } from "@/components/OfflineMode";
+import { PlayerProvider } from "@/components/Player";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 
 const instrumentSans = Instrument_Sans({
@@ -70,10 +72,13 @@ export default function RootLayout({
       >
         <I18nProvider>
           <OfflineModeProvider>
-            <KeepAlive />
-            {children}
-            <NativeLanguageGate />
-            <UpdateNotifier />
+            <PlayerProvider>
+              <KeepAlive />
+              {children}
+              <MiniPlayer />
+              <NativeLanguageGate />
+              <UpdateNotifier />
+            </PlayerProvider>
           </OfflineModeProvider>
         </I18nProvider>
       </body>

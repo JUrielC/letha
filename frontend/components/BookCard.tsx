@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Headphones, Pause, Trash2 } from "lucide-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { usePlayer } from "@/components/Player";
 import { useI18n } from "@/lib/i18n";
 import { voiceLabel } from "@/lib/voices";
 
@@ -51,6 +52,8 @@ export function BookCard({
   }, [book.voice]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { t, locale } = useI18n();
+  const player = usePlayer();
+  const playingThis = player.bookId === book.id && player.isPlaying;
 
   const bookVoices = voices.filter(
     (v) =>
@@ -137,6 +140,22 @@ export function BookCard({
               {book.author || t.common.unknownAuthor}
             </p>
           </div>
+
+          <button
+            type="button"
+            aria-label={playingThis ? t.player.pauseBook(book.title) : t.player.listenTo(book.title)}
+            title={playingThis ? t.reader.pause : t.common.listen}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (playingThis) player.togglePlay();
+              else player.openBook(book.id, { autoplay: true });
+            }}
+            className="quiet shrink-0 w-8 h-8 -mt-1 rounded-full flex items-center justify-center cursor-pointer border-0 hover:bg-[var(--hover)] transition"
+            style={{ color: playingThis ? "var(--accent)" : "var(--soft)" }}
+          >
+            {playingThis ? <Pause className="w-4 h-4 fill-current" /> : <Headphones className="w-4 h-4" />}
+          </button>
 
           <button
             type="button"

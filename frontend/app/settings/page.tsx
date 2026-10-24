@@ -8,6 +8,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { OfflineModeSection } from "@/components/OfflineModeSection";
+import { usePlayer } from "@/components/Player";
 import { OfflineTranslationSection } from "@/components/OfflineTranslationSection";
 import { OfflineVoicesSection } from "@/components/OfflineVoicesSection";
 import { TranslationEngineSection } from "@/components/TranslationEngineSection";
@@ -180,6 +181,7 @@ function SettingsContent() {
 
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
+  const player = usePlayer();
   const [fontSize, setFontSize] = useState<FontSize>("base");
 
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -356,6 +358,7 @@ function SettingsContent() {
       setSampleState("idle");
       return;
     }
+    if (player.isPlaying) player.togglePlay();
     setSampleState("loading");
     try {
       if (savePromiseRef.current) await savePromiseRef.current;

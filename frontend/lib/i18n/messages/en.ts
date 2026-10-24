@@ -52,7 +52,7 @@ export const en = {
     continueListening: "Continue listening",
     narratedBy: (persona: string) => `narrated by ${persona}`,
     leftOff: "You left off here",
-    resumeAt: (page: number) => `Resume at p. ${page}`,
+    listenFrom: (page: number) => `Listen from p. ${page}`,
     openReader: "Open reader",
     alsoInProgress: "Also in progress",
     allBooks: "All books",
@@ -69,6 +69,13 @@ export const en = {
     showMore: "Show more",
     open: (book: string) => `Open ${book}`,
     progressOf: (book: string) => `Progress of ${book}`,
+  },
+  player: {
+    label: "Player",
+    listenTo: (book: string) => `Listen to ${book}`,
+    pauseBook: (book: string) => `Pause ${book}`,
+    openReader: "Open in the reader",
+    close: "Close player",
   },
   book: {
     delete: "Delete",

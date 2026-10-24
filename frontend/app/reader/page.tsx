@@ -17,26 +17,16 @@ import {
   RotateCw,
   Settings,
 } from "lucide-react";
-import {
-  api,
-  BookDetail,
-  ChapterDetail,
-  SentenceItem,
-  VoiceItem,
-  WordTiming,
-  getBaseUrl,
-  ApiError,
-} from "@/lib/api";
+import { api, SentenceItem, WordTiming } from "@/lib/api";
 import { OfflineBadge, useOfflineMode } from "@/components/OfflineMode";
-import { errorMessage, languageName, useI18n } from "@/lib/i18n";
+import { TOTAL_PARTS, usePlayer, usePlayerTime } from "@/components/Player";
+import { languageName, useI18n } from "@/lib/i18n";
 import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { savedSettings, savePreferences } from "@/lib/preferences";
 import { Theme, useTheme } from "@/lib/useTheme";
 import { personaName, voiceLabel } from "@/lib/voices";
 
 type FontSize = "sm" | "base" | "lg" | "xl";
-
-const TOTAL_PARTS = 5;
 
 const FONT_PX: Record<FontSize, number> = { sm: 18, base: 20, lg: 22, xl: 25 };
 
@@ -66,75 +56,65 @@ function groupParagraphs(sentences: SentenceItem[]): number[][] {
 function ReaderContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("id") || "";
-
-  const [book, setBook] = useState<BookDetail | null>(null);
-  const [chapter, setChapter] = useState<ChapterDetail | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [currentChapterIdx, setCurrentChapterIdx] = useState<number | null>(null);
-  const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
-  const [voiceUnavailable, setVoiceUnavailable] = useState(false);
+  const player = usePlayer();
+  const currentTime = usePlayerTime();
   const { offlineMode } = useOfflineMode();
   const offlineModeSeenRef = useRef(offlineMode);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isSynthesizing, setIsSynthesizing] = useState(false);
-  const [loadedParts, setLoadedParts] = useState<number>(0);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [activeSentenceIdx, setActiveSentenceIdx] = useState<number>(-1);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const isCurrent = player.bookId === bookId;
+  const book = isCurrent ? player.book : null;
+  const chapter = isCurrent ? player.chapter : null;
+  const currentChapterIdx = isCurrent ? player.chapterIdx : null;
+  const loadError = isCurrent ? player.loadError : null;
+  const {
+    voices,
+    voiceUnavailable,
+    isPlaying,
+    isSynthesizing,
+    loadedParts,
+    activeSentenceIdx,
+    duration,
+    boundaryType,
+    togglePlay,
+    seekRelative,
+  } = player;
+  const selectedVoice = player.voice;
+  const playbackSpeed = player.speed;
+  const audioUrl = isCurrent && player.audioReady;
 
   const { theme, setTheme } = useTheme();
   const { t, locale } = useI18n();
   const [fontSize, setFontSize] = useState<FontSize>("base");
   const [isAaOpen, setIsAaOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
-  const [autoAdvanceSentence, setAutoAdvanceSentence] = useState<boolean>(true);
-  const [autoAdvancePage, setAutoAdvancePage] = useState<boolean>(true);
-  const [boundaryType, setBoundaryType] = useState<"SentenceBoundary" | "WordBoundary">(
-    "SentenceBoundary"
-  );
   const [activeWordKey, setActiveWordKey] = useState<string | null>(null);
   const [nativeLanguage, setNativeLanguage] = useState<string | null>(null);
   const [translations, setTranslations] = useState<Record<number, (string | null)[]>>({});
   const [translationFailed, setTranslationFailed] = useState<Record<number, boolean>>({});
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
-  const pendingRestoreRef = useRef<{ chapterIdx: number; sentenceIdx: number } | null>(null);
-  const pendingSeekTimeRef = useRef<number | null>(null);
-  const resumePlayAfterSwapRef = useRef<boolean>(false);
-  const autoPlayNextChapterRef = useRef<boolean>(false);
-  const isPlayingRef = useRef<boolean>(false);
-  const isInitialLoadRef = useRef<boolean>(true);
-  const singleSentenceEndRef = useRef<number | null>(null);
-
   const aaRef = useRef<HTMLDivElement>(null);
   const tocRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+    if (!bookId) return;
+    player.openBook(bookId);
+    player.setReaderVisible(true);
+    player.refreshSettings();
+    return () => player.setReaderVisible(false);
+  }, [bookId]);
 
   useEffect(() => {
     const saved = savedSettings();
     setFontSize(saved.font_size ?? "base");
     setShowTranslation(saved.show_translation ?? true);
 
-    api.getVoices().then(setVoices).catch(console.error);
     api
       .getAppSettings()
       .then((s) => {
         setFontSize(s.font_size);
         setShowTranslation(s.show_translation);
-        setAutoAdvanceSentence(s.auto_advance_sentence ?? true);
-        setAutoAdvancePage(s.auto_advance_page ?? true);
-        setBoundaryType(
-          s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary"
-        );
         setNativeLanguage(s.native_language ?? null);
       })
       .catch(console.error);
@@ -147,6 +127,25 @@ function ReaderContent() {
     window.addEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
     return () => window.removeEventListener(NATIVE_LANGUAGE_EVENT, onNativeLanguage);
   }, []);
+
+  useEffect(() => {
+    if (offlineModeSeenRef.current === offlineMode) return;
+    offlineModeSeenRef.current = offlineMode;
+    setTranslations({});
+    setTranslationFailed({});
+  }, [offlineMode]);
+
+  useEffect(() => {
+    if (currentChapterIdx !== null) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentChapterIdx]);
+
+  useEffect(() => {
+    if (!isCurrent || activeSentenceIdx < 0) return;
+    const timer = setTimeout(() => {
+      sentenceRefs.current[activeSentenceIdx]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [player.followKey, isCurrent, chapter?.idx]);
 
   const translationEnabled = !!nativeLanguage && !!book && book.language !== nativeLanguage;
 
@@ -169,7 +168,7 @@ function ReaderContent() {
     return () => {
       ignore = true;
     };
-  }, [translationEnabled, bookId, book, currentChapterIdx, nativeLanguage]);
+  }, [translationEnabled, bookId, book?.id, currentChapterIdx, nativeLanguage]);
 
   useEffect(() => {
     if (!isAaOpen && !isTocOpen) return;
@@ -195,344 +194,21 @@ function ReaderContent() {
     };
   }, [isAaOpen, isTocOpen]);
 
-  useEffect(() => {
-    if (!bookId) return;
-    let ignore = false;
-    isInitialLoadRef.current = true;
-    setLoadError(null);
-
-    api
-      .getBook(bookId)
-      .then((b) => {
-        if (ignore) return;
-        setBook(b);
-        if (b.total_chapters === 0) {
-          setLoadError(t.errors.pdf_without_text);
-          return;
-        }
-        const targetChapter = b.current_chapter_idx ?? 0;
-        pendingRestoreRef.current = {
-          chapterIdx: targetChapter,
-          sentenceIdx: b.current_sentence_idx || 0,
-        };
-        if (b.speed) setPlaybackSpeed(b.speed);
-        setSelectedVoice(b.voice || "es-MX-DaliaNeural");
-        setCurrentChapterIdx(targetChapter);
-      })
-      .catch((err: any) => {
-        if (ignore) return;
-        setLoadError(errorMessage(err, t, t.reader.loadFailed));
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [bookId]);
-  useEffect(() => {
-    if (!bookId || currentChapterIdx === null || !selectedVoice) return;
-    let ignore = false;
-    const controller = new AbortController();
-    const chapterIdx = currentChapterIdx;
-    const voice = selectedVoice;
-    setVoiceUnavailable(false);
-
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    if (!autoPlayNextChapterRef.current) {
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-    } else if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-    setCurrentTime(0);
-    pendingSeekTimeRef.current = null;
-    resumePlayAfterSwapRef.current = false;
-    setLoadError(null);
-
-    let restoredSentence = -1;
-    if (pendingRestoreRef.current?.chapterIdx === chapterIdx) {
-      restoredSentence = pendingRestoreRef.current.sentenceIdx;
-      pendingRestoreRef.current = null;
-    }
-
-    setActiveSentenceIdx(
-      restoredSentence >= 0 ? restoredSentence : autoPlayNextChapterRef.current ? 0 : -1
-    );
-
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
-      savePreferences({ last_book_id: bookId });
-      api.updateProgress(bookId, chapterIdx, restoredSentence >= 0 ? restoredSentence : 0).catch(console.error);
-    } else {
-      api.updateProgress(bookId, chapterIdx, 0).catch(console.error);
-    }
-
-    const loadAndSynthesizeInParts = async () => {
-      try {
-        const c = await api.getChapter(bookId, chapterIdx, voice);
-        if (ignore) return;
-        setChapter(c);
-
-        if (restoredSentence > 0 && restoredSentence < c.sentences.length) {
-          const targetSentence = c.sentences[restoredSentence];
-          if (typeof targetSentence?.start === "number") {
-            pendingSeekTimeRef.current = targetSentence.start;
-            setCurrentTime(targetSentence.start);
-          }
-          setTimeout(() => {
-            if (ignore) return;
-            sentenceRefs.current[restoredSentence]?.scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            });
-          }, 120);
-        }
-
-        const base = getBaseUrl();
-
-        const preloadNextPageFirstPart = () => {
-          if (ignore) return;
-          const nextIdx = chapterIdx + 1;
-          if (!book || nextIdx < book.total_chapters) {
-            api
-              .synthesizeChapter(
-                bookId,
-                nextIdx,
-                voice,
-                0,
-                TOTAL_PARTS,
-                controller.signal
-              )
-              .catch(() => {});
-          }
-        };
-
-        if (c.has_audio) {
-          setLoadedParts(TOTAL_PARTS);
-          setIsSynthesizing(false);
-          setAudioUrl(
-            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?voice=${encodeURIComponent(
-              voice
-            )}&t=${Date.now()}`
-          );
-          preloadNextPageFirstPart();
-          return;
-        }
-
-        const startPart = Math.min(TOTAL_PARTS, Math.max(0, c.loaded_parts || 0));
-        setLoadedParts(startPart);
-        setIsSynthesizing(true);
-
-        if (startPart > 0) {
-          setAudioUrl(
-            `${base}/api/books/${bookId}/chapters/${chapterIdx}/audio?voice=${encodeURIComponent(
-              voice
-            )}&part=${startPart}&t=${Date.now()}`
-          );
-        } else {
-          setAudioUrl(null);
-        }
-
-        for (let p = startPart; p < TOTAL_PARTS; p++) {
-          if (ignore) return;
-
-          const res = await api.synthesizeChapter(
-            bookId,
-            chapterIdx,
-            voice,
-            p,
-            TOTAL_PARTS,
-            controller.signal
-          );
-          if (ignore) return;
-
-          setLoadedParts(res.part);
-          setChapter((prev) =>
-            prev && prev.idx === chapterIdx
-              ? {
-                  ...prev,
-                  has_audio: res.is_complete,
-                  loaded_parts: res.part,
-                  duration_seconds: res.duration,
-                  sentences: res.sentences,
-                }
-              : prev
-          );
-
-          if (
-            restoredSentence > 0 &&
-            restoredSentence < res.sentences.length &&
-            typeof res.sentences[restoredSentence]?.start === "number" &&
-            !isPlayingRef.current &&
-            currentTime === 0
-          ) {
-            const targetStart = res.sentences[restoredSentence].start as number;
-            pendingSeekTimeRef.current = targetStart;
-            setCurrentTime(targetStart);
-          }
-
-          const nextAudioUrl = `${base}${res.audio_url}&part=${res.part}&t=${Date.now()}`;
-
-          if (p === 0 && startPart === 0) {
-            setAudioUrl(nextAudioUrl);
-          } else if (res.is_complete || !isPlayingRef.current) {
-            if (isPlayingRef.current && audioRef.current) {
-              pendingSeekTimeRef.current = audioRef.current.currentTime;
-              resumePlayAfterSwapRef.current = true;
-            }
-            setAudioUrl(nextAudioUrl);
-          }
-
-          if (res.is_complete) {
-            setBook((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    chapters: prev.chapters.map((ch) =>
-                      ch.idx === chapterIdx
-                        ? { ...ch, has_audio: true, duration_seconds: res.duration }
-                        : ch
-                    ),
-                  }
-                : prev
-            );
-            preloadNextPageFirstPart();
-            break;
-          }
-        }
-      } catch (err: any) {
-        if (ignore || err?.name === "AbortError") return;
-        if (err instanceof ApiError && err.code === "offline_voices_missing") setVoiceUnavailable(true);
-        autoPlayNextChapterRef.current = false;
-        setIsPlaying(false);
-        isPlayingRef.current = false;
-        console.error(err);
-      } finally {
-        if (!ignore) {
-          setIsSynthesizing(false);
-        }
-      }
-    };
-
-    loadAndSynthesizeInParts();
-
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
-  }, [bookId, currentChapterIdx, selectedVoice]);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-    if (autoAdvanceSentence && singleSentenceEndRef.current === null) return;
-
-    const checkBoundary = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      const stopEnd =
-        singleSentenceEndRef.current ??
-        (!autoAdvanceSentence && activeSentenceIdx >= 0
-          ? chapter?.sentences[activeSentenceIdx]?.end ?? null
-          : null);
-      if (typeof stopEnd === "number" && audio.currentTime >= stopEnd - 0.02) {
-        audio.pause();
-        setIsPlaying(false);
-        singleSentenceEndRef.current = null;
-      }
-    };
-
-    const timer = window.setInterval(checkBoundary, 20);
-    return () => window.clearInterval(timer);
-  }, [isPlaying, autoAdvanceSentence, activeSentenceIdx, chapter]);
-
-  useEffect(() => {
-    if (
-      !chapter?.sentences ||
-      chapter.sentences.length === 0 ||
-      currentChapterIdx === null ||
-      chapter.idx !== currentChapterIdx ||
-      pendingSeekTimeRef.current !== null
-    ) {
-      return;
-    }
-    if (!isPlaying && currentTime === 0 && activeSentenceIdx > 0) {
-      return;
-    }
-    if (!autoAdvanceSentence && singleSentenceEndRef.current !== null) {
-      return;
-    }
-
-    const idx = chapter.sentences.findIndex(
-      (s) =>
-        typeof s.start === "number" &&
-        typeof s.end === "number" &&
-        currentTime >= s.start &&
-        currentTime < s.end
-    );
-
-    if (idx !== -1 && idx !== activeSentenceIdx) {
-      setActiveSentenceIdx(idx);
-      if (bookId) {
-        api.updateProgress(bookId, currentChapterIdx, idx).catch(console.error);
-      }
-
-      const elem = sentenceRefs.current[idx];
-      if (elem) {
-        elem.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-  }, [
-    currentTime,
-    chapter,
-    activeSentenceIdx,
-    isPlaying,
-    bookId,
-    currentChapterIdx,
-    autoAdvanceSentence,
-  ]);
-
-  const handleSentenceClick = (sentence: SentenceItem, sIdx: number) => {
-    setActiveSentenceIdx(sIdx);
+  const handleSentenceClick = (_sentence: SentenceItem, sIdx: number) => {
     setActiveWordKey(null);
-    if (bookId && currentChapterIdx !== null) {
-      api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
-    }
-
-    if (typeof sentence.start === "number" && audioRef.current) {
-      singleSentenceEndRef.current =
-        !autoAdvanceSentence && typeof sentence.end === "number"
-          ? sentence.end
-          : null;
-      audioRef.current.currentTime = sentence.start;
-      setCurrentTime(sentence.start);
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
-    }
+    player.playSentence(sIdx);
   };
 
   const handleWordClick = (
-    sentence: SentenceItem,
+    _sentence: SentenceItem,
     sIdx: number,
     word: WordTiming,
     wIdx: number,
     e: React.MouseEvent
   ) => {
     e.stopPropagation();
-    setActiveSentenceIdx(sIdx);
     setActiveWordKey(`${sIdx}:${wIdx}`);
-    if (bookId && currentChapterIdx !== null) {
-      api.updateProgress(bookId, currentChapterIdx, sIdx).catch(console.error);
-    }
-
-    if (audioRef.current) {
-      const startSec = Math.max(0, word.start - 0.02);
-      singleSentenceEndRef.current = word.end + 0.04;
-      audioRef.current.currentTime = startSec;
-      setCurrentTime(startSec);
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
-    }
+    player.playWord(sIdx, word);
   };
 
   const renderSentenceContent = (s: SentenceItem, sentIdx: number) => {
@@ -595,52 +271,6 @@ function ReaderContent() {
     );
   };
 
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-      autoPlayNextChapterRef.current = false;
-      singleSentenceEndRef.current = null;
-    } else {
-      if (!autoAdvanceSentence && chapter?.sentences?.length) {
-        const targetIdx = activeSentenceIdx >= 0 ? activeSentenceIdx : 0;
-        const targetSentence = chapter.sentences[targetIdx];
-        if (
-          targetSentence &&
-          typeof targetSentence.start === "number" &&
-          typeof targetSentence.end === "number"
-        ) {
-          if (activeSentenceIdx < 0) {
-            setActiveSentenceIdx(0);
-          }
-          if (
-            audioRef.current.currentTime < targetSentence.start ||
-            audioRef.current.currentTime >= targetSentence.end - 0.05
-          ) {
-            audioRef.current.currentTime = targetSentence.start;
-            setCurrentTime(targetSentence.start);
-          }
-          singleSentenceEndRef.current = targetSentence.end;
-        }
-      } else {
-        singleSentenceEndRef.current = null;
-      }
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
-    }
-  };
-
-  const seekRelative = (seconds: number) => {
-    if (!audioRef.current) return;
-    const nextTime = Math.max(
-      0,
-      Math.min(duration, audioRef.current.currentTime + seconds)
-    );
-    audioRef.current.currentTime = nextTime;
-    setCurrentTime(nextTime);
-  };
-
   const bookVoices = book
     ? voices.filter(
         (v) =>
@@ -648,62 +278,6 @@ function ReaderContent() {
           v.short_name === selectedVoice
       )
     : [];
-
-  const applyVoice = (newVoice: string) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    setIsPlaying(false);
-    setAudioUrl(null);
-    setChapter((prev) =>
-      prev
-        ? {
-            ...prev,
-            has_audio: false,
-            sentences: prev.sentences.map((s) => ({ ...s, start: null, end: null })),
-          }
-        : null
-    );
-    setSelectedVoice(newVoice);
-  };
-
-  const handleVoiceChange = async (newVoice: string) => {
-    if (newVoice === selectedVoice) return;
-    applyVoice(newVoice);
-    if (bookId) {
-      await api.updateSettings(bookId, newVoice, playbackSpeed).catch(console.error);
-    }
-  };
-
-  useEffect(() => {
-    if (offlineModeSeenRef.current === offlineMode) return;
-    offlineModeSeenRef.current = offlineMode;
-    setTranslations({});
-    setTranslationFailed({});
-    api.getVoices().then(setVoices).catch(console.error);
-    if (!bookId) return;
-    api
-      .getBook(bookId)
-      .then((b) => {
-        if (!selectedVoice || b.voice === selectedVoice) return;
-        // Al cambiar de modo se retoma la misma oración con la voz que corresponde
-        if (currentChapterIdx !== null && activeSentenceIdx >= 0) {
-          pendingRestoreRef.current = { chapterIdx: currentChapterIdx, sentenceIdx: activeSentenceIdx };
-        }
-        applyVoice(b.voice);
-      })
-      .catch(console.error);
-  }, [offlineMode]);
-
-  const handleSpeedChange = async (newSpeed: number) => {
-    setPlaybackSpeed(newSpeed);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newSpeed;
-    }
-    if (bookId && selectedVoice) {
-      await api.updateSettings(bookId, selectedVoice, newSpeed).catch(console.error);
-    }
-  };
 
   const stepFontSize = (delta: number) => {
     const order: FontSize[] = ["sm", "base", "lg", "xl"];
@@ -747,63 +321,6 @@ function ReaderContent() {
 
   return (
     <div className={`min-h-screen flex flex-col ${translationPanelVisible ? "pb-64" : "pb-36"}`}>
-      {audioUrl && (
-        <audio
-          ref={audioRef}
-          src={audioUrl}
-          onTimeUpdate={() => {
-            if (audioRef.current) {
-              setCurrentTime(audioRef.current.currentTime);
-            }
-          }}
-          onLoadedMetadata={() => {
-            if (audioRef.current) {
-              setDuration(audioRef.current.duration);
-              audioRef.current.playbackRate = playbackSpeed;
-              if (pendingSeekTimeRef.current !== null) {
-                audioRef.current.currentTime = pendingSeekTimeRef.current;
-                setCurrentTime(pendingSeekTimeRef.current);
-                pendingSeekTimeRef.current = null;
-              }
-              if (autoPlayNextChapterRef.current) {
-                autoPlayNextChapterRef.current = false;
-                audioRef.current.play().catch(console.error);
-                setIsPlaying(true);
-                isPlayingRef.current = true;
-              } else if (resumePlayAfterSwapRef.current) {
-                resumePlayAfterSwapRef.current = false;
-                audioRef.current.play().catch(console.error);
-                setIsPlaying(true);
-                isPlayingRef.current = true;
-              }
-            }
-          }}
-          onEnded={() => {
-            if (
-              autoAdvanceSentence &&
-              autoAdvancePage &&
-              book &&
-              currentChapterIdx !== null &&
-              currentChapterIdx + 1 < book.total_chapters
-            ) {
-              autoPlayNextChapterRef.current = true;
-              setIsPlaying(true);
-              isPlayingRef.current = true;
-              setCurrentChapterIdx(currentChapterIdx + 1);
-            } else {
-              autoPlayNextChapterRef.current = false;
-              setIsPlaying(false);
-              isPlayingRef.current = false;
-            }
-          }}
-          onError={() => {
-            autoPlayNextChapterRef.current = false;
-            setIsPlaying(false);
-            isPlayingRef.current = false;
-          }}
-        />
-      )}
-
       {/* Barra superior de lectura */}
       <div className="sticky top-0 z-30 p-4 pb-0 pointer-events-none">
         <header
@@ -1053,8 +570,7 @@ function ReaderContent() {
                   key={c.idx}
                   type="button"
                   onClick={() => {
-                    autoPlayNextChapterRef.current = false;
-                    setCurrentChapterIdx(c.idx);
+                    player.goToChapter(c.idx);
                     setIsTocOpen(false);
                   }}
                   className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 border-0 rounded-2xl text-left cursor-pointer transition text-sm"
@@ -1221,7 +737,7 @@ function ReaderContent() {
             </div>
             <select
               value={selectedVoice || "es-MX-DaliaNeural"}
-              onChange={(e) => handleVoiceChange(e.target.value)}
+              onChange={(e) => player.changeVoice(e.target.value)}
               aria-label={t.reader.narratorLabel(narrator)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >
@@ -1243,10 +759,7 @@ function ReaderContent() {
               type="button"
               disabled={currentChapterIdx === null || currentChapterIdx <= 0}
               onClick={() => {
-                autoPlayNextChapterRef.current = false;
-                if (currentChapterIdx !== null) {
-                  setCurrentChapterIdx(currentChapterIdx - 1);
-                }
+                if (currentChapterIdx !== null) player.goToChapter(currentChapterIdx - 1);
               }}
               aria-label={t.reader.previousPage}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
@@ -1310,10 +823,7 @@ function ReaderContent() {
                 currentChapterIdx + 1 >= book.total_chapters
               }
               onClick={() => {
-                autoPlayNextChapterRef.current = false;
-                if (currentChapterIdx !== null) {
-                  setCurrentChapterIdx(currentChapterIdx + 1);
-                }
+                if (currentChapterIdx !== null) player.goToChapter(currentChapterIdx + 1);
               }}
               aria-label={t.reader.nextPage}
               className="quiet w-11 h-11 rounded-full flex items-center justify-center border-0 disabled:opacity-30 cursor-pointer transition"
@@ -1378,11 +888,7 @@ function ReaderContent() {
                     step={0.1}
                     value={currentTime}
                     disabled={!audioUrl}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setCurrentTime(val);
-                      if (audioRef.current) audioRef.current.currentTime = val;
-                    }}
+                    onChange={(e) => player.seekTo(parseFloat(e.target.value))}
                     aria-label={t.reader.position}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed m-0 p-0"
                   />
@@ -1417,7 +923,7 @@ function ReaderContent() {
             </div>
             <select
               value={playbackSpeed}
-              onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+              onChange={(e) => player.changeSpeed(parseFloat(e.target.value))}
               aria-label={t.reader.playbackSpeed(playbackSpeed)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >

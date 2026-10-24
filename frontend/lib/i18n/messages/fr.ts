@@ -54,7 +54,7 @@ export const fr: Messages = {
     continueListening: "Reprendre l’écoute",
     narratedBy: (persona) => `lu par ${persona}`,
     leftOff: "Votre lecture s’est arrêtée ici",
-    resumeAt: (page) => `Reprendre à la p. ${page}`,
+    listenFrom: (page) => `Écouter à partir de la p. ${page}`,
     openReader: "Ouvrir le lecteur",
     alsoInProgress: "Également en cours",
     allBooks: "Tous les livres",
@@ -71,6 +71,13 @@ export const fr: Messages = {
     showMore: "Voir plus",
     open: (book) => `Ouvrir ${book}`,
     progressOf: (book) => `Progression de ${book}`,
+  },
+  player: {
+    label: "Lecteur audio",
+    listenTo: (book) => `Écouter ${book}`,
+    pauseBook: (book) => `Mettre en pause ${book}`,
+    openReader: "Ouvrir dans le lecteur",
+    close: "Fermer le lecteur audio",
   },
   book: {
     delete: "Supprimer",
