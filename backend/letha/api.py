@@ -9,6 +9,8 @@ import json
 import os
 import re
 import shutil
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -17,7 +19,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, sta
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from letha import config, database
+from letha import __version__, config, database
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import (
     AppSettings,
@@ -25,6 +27,7 @@ from letha.models import (
     BookSummary,
     ChapterDetail,
     ChapterTranslations,
+    Connectivity,
     OfflineTranslation,
     OfflineVoices,
     SkipUpdateRequest,
@@ -46,6 +49,8 @@ from letha.services import updates as updates_service
 _required_token: Optional[str] = os.environ.get("LETHA_TOKEN") or None
 _active_jobs: int = 0
 _VOICE_RE = re.compile(r"^[a-zA-Z0-9_-]{3,80}$")
+# Cualquier respuesta de este servicio, aunque sea un error HTTP, indica que hay internet
+CONNECTIVITY_URL = "https://edge.microsoft.com"
 _PREVIEW_TEXTS = {
     "en": "Hello, I am {persona}. I will read this book for you.",
     "es": "Hola, soy {persona}. Te acompañaré en la lectura de este libro.",
@@ -156,6 +161,8 @@ def get_app_settings():
         auto_check_updates=database.get_auto_check_updates(),
         native_language=database.get_native_language(),
         translation_order=database.get_translation_order(),
+        offline_mode=database.get_offline_mode(),
+        offline_mode_auto=database.offline_mode_is_automatic(),
         **database.get_ui_preferences(),
     )
 
@@ -203,6 +210,8 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         if payload.translation_order is not None
         else database.get_translation_order()
     )
+    if payload.offline_mode is not None:
+        database.set_offline_mode(payload.offline_mode, automatic=payload.offline_mode_auto)
     preferences = database.set_ui_preferences(
         theme=payload.theme,
         font_size=payload.font_size,
@@ -217,8 +226,23 @@ def update_app_settings(payload: UpdateAppSettingsRequest):
         auto_check_updates=check_updates,
         native_language=native,
         translation_order=order,
+        offline_mode=database.get_offline_mode(),
+        offline_mode_auto=database.offline_mode_is_automatic(),
         **preferences,
     )
+
+
+@app.get("/api/connectivity", response_model=Connectivity)
+def get_connectivity():
+    """Síncrona a propósito: la consulta de red corre en el threadpool sin bloquear el servidor."""
+    request = urllib.request.Request(CONNECTIVITY_URL, method="HEAD", headers={"User-Agent": f"letha/{__version__}"})
+    try:
+        urllib.request.urlopen(request, timeout=4).close()
+    except urllib.error.HTTPError:
+        pass
+    except (OSError, ValueError):
+        return Connectivity(online=False)
+    return Connectivity(online=True)
 
 
 @app.get("/api/translation/languages", response_model=List[TranslationLanguage])
@@ -305,6 +329,8 @@ def uninstall(payload: UninstallRequest):
 
 @app.get("/api/voices", response_model=List[VoiceItem])
 async def get_voices():
+    if database.get_offline_mode():
+        return offline_voices.list_voices()
     # Sin internet se muestra la última lista conocida para no perder la voz de cada libro en el selector
     try:
         online = await tts_service.list_available_voices()
@@ -429,6 +455,8 @@ def upload_book(
         speed=DEFAULT_SPEED,
         language=chosen_language,
     )
+    if database.get_offline_mode() and offline_voices.is_voice(chosen_voice):
+        database.update_book_settings(book_id, voice=chosen_voice)
 
     detail = database.get_book(book_id)
     if not detail:

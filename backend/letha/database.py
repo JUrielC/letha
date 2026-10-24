@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from letha import config
 from letha.config import DEFAULT_SPEED, DEFAULT_VOICE
 from letha.models import BookDetail, BookSummary, ChapterDetail, ChapterSummary, SentenceItem
+from letha.services import offline_voices
 from letha.services import pdf as pdf_service
 from letha.services import tts as tts_service
 
@@ -49,6 +50,8 @@ def init_db():
         book_columns = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
         if "language" not in book_columns:
             conn.execute("ALTER TABLE books ADD COLUMN language TEXT")
+        if "offline_voice" not in book_columns:
+            conn.execute("ALTER TABLE books ADD COLUMN offline_voice TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS chapters (
@@ -246,6 +249,26 @@ def get_auto_check_updates() -> bool:
 def set_auto_check_updates(enabled: bool) -> bool:
     set_setting("auto_check_updates", "1" if enabled else "0")
     return bool(enabled)
+
+
+def get_offline_mode() -> bool:
+    return get_setting("offline_mode") in ("manual", "auto")
+
+
+def offline_mode_is_automatic() -> bool:
+    return get_setting("offline_mode") == "auto"
+
+
+def set_offline_mode(enabled: bool, automatic: bool = False) -> bool:
+    set_setting("offline_mode", ("auto" if automatic else "manual") if enabled else "off")
+    return bool(enabled)
+
+
+def _active_voice(row: sqlite3.Row, offline_mode: bool) -> str:
+    # Cada libro recuerda aparte su voz sin conexión para recuperar la de siempre al salir del modo
+    if offline_mode:
+        return row["offline_voice"] or offline_voices.default_voice(row["language"])
+    return row["voice"] or DEFAULT_VOICE
 
 
 def get_native_language() -> Optional[str]:
@@ -498,6 +521,7 @@ def _migrate_pdf_extraction(conn: sqlite3.Connection) -> None:
 
 
 def list_books() -> List[BookSummary]:
+    offline_mode = get_offline_mode()
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM books ORDER BY last_read_at DESC").fetchall()
         result = []
@@ -513,7 +537,7 @@ def list_books() -> List[BookSummary]:
                     cover_url=cover_url,
                     current_chapter_idx=r["current_chapter_idx"],
                     current_sentence_idx=r["current_sentence_idx"],
-                    voice=r["voice"],
+                    voice=_active_voice(r, offline_mode),
                     language=r["language"],
                     speed=r["speed"],
                     created_at=r["created_at"],
@@ -531,12 +555,13 @@ def _chapter_voice_files(book_id: str, chapter_idx: int, voice: str) -> tuple[Pa
 
 
 def get_book(book_id: str) -> Optional[BookDetail]:
+    offline_mode = get_offline_mode()
     with get_connection() as conn:
         r = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if not r:
             return None
 
-        active_voice = r["voice"] or DEFAULT_VOICE
+        active_voice = _active_voice(r, offline_mode)
 
         chapters_rows = conn.execute(
             "SELECT idx, title, start_page, end_page, audio_path, duration_seconds FROM chapters WHERE book_id = ? ORDER BY idx ASC",
@@ -580,11 +605,14 @@ def get_book(book_id: str) -> Optional[BookDetail]:
 def get_chapter(
     book_id: str, chapter_idx: int, voice: Optional[str] = None
 ) -> Optional[ChapterDetail]:
+    offline_mode = get_offline_mode()
     with get_connection() as conn:
-        book_row = conn.execute("SELECT voice FROM books WHERE id = ?", (book_id,)).fetchone()
+        book_row = conn.execute(
+            "SELECT voice, offline_voice, language FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
         if not book_row:
             return None
-        active_voice = voice or book_row["voice"] or DEFAULT_VOICE
+        active_voice = voice or _active_voice(book_row, offline_mode)
 
         r = conn.execute(
             "SELECT * FROM chapters WHERE book_id = ? AND idx = ?",
@@ -783,7 +811,8 @@ def update_book_settings(
 ):
     with get_connection() as conn:
         if voice is not None:
-            conn.execute("UPDATE books SET voice = ? WHERE id = ?", (voice, book_id))
+            column = "offline_voice" if get_offline_mode() and offline_voices.is_voice(voice) else "voice"
+            conn.execute(f"UPDATE books SET {column} = ? WHERE id = ?", (voice, book_id))
             # Sincronizar el estado de audio de cada capítulo con la nueva voz seleccionada:
             # si ya existe el caché 1.00x para esta voz en disco, vincularlo; si no, limpiar audio_path
             # para que no se reproduzca el audio de la voz anterior.

@@ -137,6 +137,8 @@ def _batches(texts: Sequence[str], provider: Provider) -> Iterator[List[str]]:
 
 
 def _ordered_providers() -> List[Provider]:
+    if database.get_offline_mode():
+        return [p for p in PROVIDERS if p.name == "offline"]
     order = database.get_translation_order()
     return sorted(PROVIDERS, key=lambda p: order.index(p.name) if p.name in order else len(order))
 

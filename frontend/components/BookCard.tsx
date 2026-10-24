@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, BookSummary, VoiceItem, getBaseUrl } from "@/lib/api";
 import { Check, Trash2 } from "lucide-react";
@@ -45,6 +45,10 @@ export function BookCard({
     book.voice || "es-MX-DaliaNeural"
   );
   const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setSelectedVoice(book.voice || "es-MX-DaliaNeural");
+  }, [book.voice]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { t, locale } = useI18n();
 

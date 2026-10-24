@@ -4,6 +4,7 @@ import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 import { KeepAlive } from "@/components/KeepAlive";
 import { NativeLanguageGate } from "@/components/NativeLanguageGate";
+import { OfflineModeProvider } from "@/components/OfflineMode";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 
 const instrumentSans = Instrument_Sans({
@@ -68,10 +69,12 @@ export default function RootLayout({
         className="min-h-screen transition-colors duration-200 font-sans"
       >
         <I18nProvider>
-          <KeepAlive />
-          {children}
-          <NativeLanguageGate />
-          <UpdateNotifier />
+          <OfflineModeProvider>
+            <KeepAlive />
+            {children}
+            <NativeLanguageGate />
+            <UpdateNotifier />
+          </OfflineModeProvider>
         </I18nProvider>
       </body>
     </html>

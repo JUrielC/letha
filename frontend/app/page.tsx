@@ -11,6 +11,7 @@ import {
   VoiceItem,
   getBaseUrl,
 } from "@/lib/api";
+import { useOfflineMode } from "@/components/OfflineMode";
 import { useI18n } from "@/lib/i18n";
 import { personaName } from "@/lib/voices";
 import {
@@ -70,6 +71,8 @@ export default function HomePage() {
   const addInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const { t, locale } = useI18n();
+  const { offlineMode } = useOfflineMode();
+  const offlineModeSeenRef = useRef(offlineMode);
 
   const loadBooks = async () => {
     try {
@@ -82,6 +85,13 @@ export default function HomePage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (offlineModeSeenRef.current === offlineMode) return;
+    offlineModeSeenRef.current = offlineMode;
+    api.getBooks().then(setBooks).catch(console.error);
+    api.getVoices().then(setVoices).catch(console.error);
+  }, [offlineMode]);
 
   useEffect(() => {
     loadBooks();

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { UploadCloud, X, Loader2, FileText, Check, Play, Pause } from "lucide-react";
 import { api, VoiceItem } from "@/lib/api";
+import { useOfflineMode } from "@/components/OfflineMode";
 import { errorMessage, languageName, useI18n } from "@/lib/i18n";
 import { voiceDetails } from "@/lib/voices";
 
@@ -35,6 +36,7 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   const inputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const { t, locale } = useI18n();
+  const { offlineMode } = useOfflineMode();
 
   useEffect(() => {
     if (isOpen && initialFile) {
@@ -44,10 +46,10 @@ export function UploadModal({ isOpen, onClose, onSuccess, initialFile }: UploadM
   }, [isOpen, initialFile]);
 
   useEffect(() => {
-    if (isOpen && voices.length === 0) {
+    if (isOpen) {
       api.getVoices().then(setVoices).catch(console.error);
     }
-  }, [isOpen, voices.length]);
+  }, [isOpen, offlineMode]);
 
   const filteredVoices = voices.filter((v) =>
     v.locale.toLowerCase().startsWith(`${langFilter}-`)

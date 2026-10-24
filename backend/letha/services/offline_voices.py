@@ -67,6 +67,11 @@ def persona(voice: str) -> str:
     return _voice_id(voice).split("_", 1)[1].capitalize()
 
 
+def default_voice(language: Optional[str]) -> str:
+    voice_id = next((v for v in VOICES if VOICE_LANGUAGES[v[0]][0] == language), VOICES[0])
+    return VOICE_PREFIX + voice_id
+
+
 def _models_dir() -> Path:
     return config.CACHE_DIR / "voice-models"
 

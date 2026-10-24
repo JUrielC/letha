@@ -105,6 +105,8 @@ class AppSettings(BaseModel):
     show_translation: bool = True
     last_book_id: Optional[str] = None
     translation_order: List[TranslationEngine] = ["microsoft", "google", "offline"]
+    offline_mode: bool = False
+    offline_mode_auto: bool = False
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -119,6 +121,12 @@ class UpdateAppSettingsRequest(BaseModel):
     show_translation: Optional[bool] = None
     last_book_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
     translation_order: Optional[List[TranslationEngine]] = None
+    offline_mode: Optional[bool] = None
+    offline_mode_auto: bool = False
+
+
+class Connectivity(BaseModel):
+    online: bool
 
 
 class TranslationLanguage(BaseModel):

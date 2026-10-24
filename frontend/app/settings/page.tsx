@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Loader2, Play, RotateCcw, Square, Trash2 } from "luci
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { Navbar } from "@/components/Navbar";
 import { LanguagePicker } from "@/components/LanguagePicker";
+import { OfflineModeSection } from "@/components/OfflineModeSection";
 import { OfflineTranslationSection } from "@/components/OfflineTranslationSection";
 import { OfflineVoicesSection } from "@/components/OfflineVoicesSection";
 import { TranslationEngineSection } from "@/components/TranslationEngineSection";
@@ -525,6 +526,8 @@ function SettingsContent() {
                 <LanguagePicker languages={languages} value={nativeLanguage} onChange={handleNativeLanguageChange} />
               </div>
             </section>
+
+            <OfflineModeSection />
 
             <OfflineTranslationSection nativeLanguage={nativeLanguage} />
 

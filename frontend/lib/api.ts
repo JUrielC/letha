@@ -87,6 +87,8 @@ export interface AppSettings {
   show_translation: boolean;
   last_book_id: string | null;
   translation_order: TranslationEngine[];
+  offline_mode: boolean;
+  offline_mode_auto: boolean;
 }
 
 export type TranslationEngine = "microsoft" | "google" | "offline";
@@ -214,12 +216,16 @@ export const api = {
     show_translation?: boolean;
     last_book_id?: string;
     translation_order?: TranslationEngine[];
+    offline_mode?: boolean;
+    offline_mode_auto?: boolean;
   }) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+  getConnectivity: () => request<{ online: boolean }>("/api/connectivity"),
 
   getTranslationLanguages: () => request<TranslationLanguage[]>("/api/translation/languages"),
 

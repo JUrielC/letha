@@ -25,7 +25,9 @@ import {
   VoiceItem,
   WordTiming,
   getBaseUrl,
+  ApiError,
 } from "@/lib/api";
+import { OfflineBadge, useOfflineMode } from "@/components/OfflineMode";
 import { errorMessage, languageName, useI18n } from "@/lib/i18n";
 import { NATIVE_LANGUAGE_EVENT } from "@/lib/nativeLanguage";
 import { savedSettings, savePreferences } from "@/lib/preferences";
@@ -71,6 +73,9 @@ function ReaderContent() {
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number | null>(null);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
+  const [voiceUnavailable, setVoiceUnavailable] = useState(false);
+  const { offlineMode } = useOfflineMode();
+  const offlineModeSeenRef = useRef(offlineMode);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -229,6 +234,7 @@ function ReaderContent() {
     const controller = new AbortController();
     const chapterIdx = currentChapterIdx;
     const voice = selectedVoice;
+    setVoiceUnavailable(false);
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -397,6 +403,7 @@ function ReaderContent() {
         }
       } catch (err: any) {
         if (ignore || err?.name === "AbortError") return;
+        if (err instanceof ApiError && err.code === "offline_voices_missing") setVoiceUnavailable(true);
         autoPlayNextChapterRef.current = false;
         setIsPlaying(false);
         isPlayingRef.current = false;
@@ -642,8 +649,7 @@ function ReaderContent() {
       )
     : [];
 
-  const handleVoiceChange = async (newVoice: string) => {
-    if (newVoice === selectedVoice) return;
+  const applyVoice = (newVoice: string) => {
     if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -659,10 +665,35 @@ function ReaderContent() {
         : null
     );
     setSelectedVoice(newVoice);
+  };
+
+  const handleVoiceChange = async (newVoice: string) => {
+    if (newVoice === selectedVoice) return;
+    applyVoice(newVoice);
     if (bookId) {
       await api.updateSettings(bookId, newVoice, playbackSpeed).catch(console.error);
     }
   };
+
+  useEffect(() => {
+    if (offlineModeSeenRef.current === offlineMode) return;
+    offlineModeSeenRef.current = offlineMode;
+    setTranslations({});
+    setTranslationFailed({});
+    api.getVoices().then(setVoices).catch(console.error);
+    if (!bookId) return;
+    api
+      .getBook(bookId)
+      .then((b) => {
+        if (!selectedVoice || b.voice === selectedVoice) return;
+        // Al cambiar de modo se retoma la misma oración con la voz que corresponde
+        if (currentChapterIdx !== null && activeSentenceIdx >= 0) {
+          pendingRestoreRef.current = { chapterIdx: currentChapterIdx, sentenceIdx: activeSentenceIdx };
+        }
+        applyVoice(b.voice);
+      })
+      .catch(console.error);
+  }, [offlineMode]);
 
   const handleSpeedChange = async (newSpeed: number) => {
     setPlaybackSpeed(newSpeed);
@@ -704,12 +735,14 @@ function ReaderContent() {
   if (!chapterTranslations) {
     translationMessage =
       currentChapterIdx !== null && translationFailed[currentChapterIdx]
-        ? t.reader.pageTranslationFailed
+        ? offlineMode
+          ? t.reader.offlineTranslationMissing
+          : t.reader.pageTranslationFailed
         : t.reader.translating;
   } else if (activeSentenceIdx < 0) {
     translationMessage = t.reader.tapSentence;
   } else if (!activeTranslation) {
-    translationMessage = t.reader.sentenceTranslationFailed;
+    translationMessage = offlineMode ? t.reader.offlineTranslationMissing : t.reader.sentenceTranslationFailed;
   }
 
   return (
@@ -819,6 +852,7 @@ function ReaderContent() {
             </div>
 
             <div className="flex-1 min-w-0 flex items-center justify-end gap-1">
+              <OfflineBadge />
               {translationEnabled && (
                 <button
                   type="button"
@@ -1291,7 +1325,11 @@ function ReaderContent() {
 
           {/* 3. Línea de tiempo con 5 segmentos */}
           <div className="flex-1 min-w-[200px] flex flex-col gap-1.5 px-1">
-            {!audioUrl && isSynthesizing ? (
+            {voiceUnavailable ? (
+              <p className="m-0 py-1 text-xs font-medium text-center" style={{ color: "var(--muted)" }}>
+                {t.reader.offlineVoicesMissing}
+              </p>
+            ) : !audioUrl && isSynthesizing ? (
               <div className="flex items-center justify-center gap-2 py-1 text-xs font-medium" style={{ color: "var(--muted)" }}>
                 <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--muted)" }} />
                 <span>{t.reader.loadingVoicePart(Math.max(1, loadedParts), TOTAL_PARTS)}</span>

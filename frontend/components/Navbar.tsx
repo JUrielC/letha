@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Plus, Moon, Sun, Coffee } from "lucide-react";
+import { OfflineBadge } from "@/components/OfflineMode";
 import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/useTheme";
 
@@ -72,6 +73,7 @@ export function Navbar({ onOpenUpload }: NavbarProps) {
         </nav>
 
         <div className="flex items-center gap-3">
+          <OfflineBadge />
           <div
             role="radiogroup"
             aria-label={t.nav.theme}

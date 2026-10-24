@@ -1695,3 +1695,59 @@ def test_offline_voice_with_the_real_model(monkeypatch):
     assert audio[:1] == b"\xff"
     assert duration > 1
     assert timings[0][1] <= timings[1][0] and timings[1][1] == duration
+
+
+def test_offline_mode_remembers_each_books_online_voice(monkeypatch):
+    from letha.services import tts as tts_service
+
+    async def must_not_go_online():
+        raise AssertionError("en modo sin conexión no se piden las voces en línea")
+
+    database.init_db()
+    install_fake_offline_voices(monkeypatch)
+    client = TestClient(api.app)
+    files = {"file": ("libro.pdf", io.BytesIO(create_sample_pdf()), "application/pdf")}
+    book_id = client.post("/api/books/upload", files=files, data={"voice": "es-MX-DaliaNeural", "language": "es"}).json()["id"]
+    voice = lambda: client.get(f"/api/books/{book_id}").json()["voice"]
+
+    settings = client.put("/api/settings", json={"offline_mode": True, "offline_mode_auto": True}).json()
+    assert (settings["offline_mode"], settings["offline_mode_auto"]) == (True, True)
+    assert voice() == "kokoro-ef_dora"
+    assert client.get("/api/books").json()[0]["voice"] == "kokoro-ef_dora"
+
+    monkeypatch.setattr(tts_service.edge_tts, "list_voices", must_not_go_online)
+    assert all(v["offline"] for v in client.get("/api/voices").json())
+    client.put(f"/api/books/{book_id}/settings", json={"voice": "kokoro-em_alex"})
+    assert voice() == "kokoro-em_alex"
+
+    assert client.put("/api/settings", json={"offline_mode": False}).json()["offline_mode"] is False
+    assert voice() == "es-MX-DaliaNeural"
+
+    settings = client.put("/api/settings", json={"offline_mode": True}).json()
+    assert (settings["offline_mode"], settings["offline_mode_auto"]) == (True, False)
+    assert voice() == "kokoro-em_alex"
+
+
+def test_offline_mode_translates_only_with_downloaded_models(monkeypatch):
+    from letha.services import translation as translation_service
+
+    providers = [FakeProvider("microsoft"), FakeProvider("google"), FakeProvider("offline")]
+    monkeypatch.setattr(translation_service, "PROVIDERS", providers)
+    monkeypatch.setattr(translation_service, "_down_until", {})
+    database.init_db()
+
+    assert translation_service.translate(["Hello."], "en", "es")["provider"] == "microsoft"
+    database.set_offline_mode(True, automatic=True)
+    assert translation_service.translate(["Bye."], "en", "es") == {"translations": ["offline:Bye."], "provider": "offline"}
+    assert [len(p.calls) for p in providers] == [1, 0, 1]
+
+
+def test_connectivity_check(monkeypatch, tmp_path):
+    reachable = tmp_path / "respuesta.txt"
+    reachable.write_text("ok")
+    client = TestClient(api.app)
+
+    monkeypatch.setattr(api, "CONNECTIVITY_URL", reachable.as_uri())
+    assert client.get("/api/connectivity").json() == {"online": True}
+    monkeypatch.setattr(api, "CONNECTIVITY_URL", (tmp_path / "no-existe.txt").as_uri())
+    assert client.get("/api/connectivity").json() == {"online": False}
