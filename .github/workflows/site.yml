@@ -1,10 +1,13 @@
 name: Sitio letha.jurielc.com
 
 # Cada despliegue de Pages reemplaza el sitio entero: todo lo que se sirve en
-# letha.jurielc.com (manifiesto, y más adelante documentación) se arma aquí.
+# letha.jurielc.com (la carpeta site/ del repo más el manifiesto) se arma aquí.
 # Corre en la rama principal porque el entorno github-pages solo admite
 # despliegues desde ella, no desde el tag que dispara el release.
 on:
+  push:
+    branches: [master]
+    paths: ["site/**"]
   workflow_run:
     workflows: ["Release"]
     types: [completed]
@@ -21,12 +24,16 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: site
+
       - name: Manifiesto de actualizaciones del último release
         env:
           GH_TOKEN: ${{ github.token }}

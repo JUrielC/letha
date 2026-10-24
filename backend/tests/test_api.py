@@ -1751,3 +1751,40 @@ def test_connectivity_check(monkeypatch, tmp_path):
     assert client.get("/api/connectivity").json() == {"online": True}
     monkeypatch.setattr(api, "CONNECTIVITY_URL", (tmp_path / "no-existe.txt").as_uri())
     assert client.get("/api/connectivity").json() == {"online": False}
+
+
+def test_published_catalog_lists_every_model():
+    from letha.services import offline_translation, offline_voices
+
+    catalog = json.loads((Path(__file__).resolve().parents[2] / "site" / "models" / "catalog.json").read_text())
+    assert set(catalog["translation"]) == set(offline_translation.MODELS)
+    assert set(catalog["voices"]) == set(offline_voices.FILES)
+    assert all(url.endswith(f"/{model}.zip") for model, url in catalog["translation"].items())
+    assert all(url.endswith(f"/{name}") for name, url in catalog["voices"].items())
+
+
+def test_model_downloads_follow_the_published_catalog(monkeypatch, tmp_path):
+    from letha.services import model_catalog, offline_voices
+
+    hosting = tmp_path / "nuevo-hospedaje"
+    hosting.mkdir()
+    files = {"kokoro-v1.0.onnx": b"modelo", "voices-v1.0.bin": b"voces"}
+    for name, data in files.items():
+        (hosting / name).write_bytes(data)
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(json.dumps({"voices": {name: (hosting / name).as_uri() for name in files}}))
+    monkeypatch.setattr(model_catalog, "CATALOG_URL", catalog.as_uri())
+    monkeypatch.setattr(offline_voices, "FILES_URL", (tmp_path / "hospedaje-anterior").as_uri())
+    monkeypatch.setattr(offline_voices, "_download", None)
+    monkeypatch.setattr(
+        offline_voices,
+        "FILES",
+        {name: {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()} for name, data in files.items()},
+    )
+
+    offline_voices._download_files({"downloaded": 0, "error": None})
+    assert offline_voices.is_installed()
+
+    assert model_catalog.resolve("voices", {"otro.bin": "respaldo"}) == {"otro.bin": "respaldo"}
+    monkeypatch.setattr(model_catalog, "CATALOG_URL", (tmp_path / "no-existe.json").as_uri())
+    assert model_catalog.resolve("voices", {"kokoro-v1.0.onnx": "respaldo"}) == {"kokoro-v1.0.onnx": "respaldo"}

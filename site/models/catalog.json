@@ -1,0 +1,14 @@
+{
+  "translation": {
+    "opus-mt-tc-big-en-es": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-big-en-es.zip",
+    "opus-mt-tc-big-en-fr": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-big-en-fr.zip",
+    "opus-mt-tc-big-en-it": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-big-en-it.zip",
+    "opus-mt-tc-big-en-pt": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-big-en-pt.zip",
+    "opus-mt-tc-big-itc-itc": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-big-itc-itc.zip",
+    "opus-mt-tc-bible-big-roa-en": "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1/opus-mt-tc-bible-big-roa-en.zip"
+  },
+  "voices": {
+    "kokoro-v1.0.onnx": "https://github.com/JUrielC/letha/releases/download/voces-kokoro-1/kokoro-v1.0.onnx",
+    "voices-v1.0.bin": "https://github.com/JUrielC/letha/releases/download/voces-kokoro-1/voices-v1.0.bin"
+  }
+}

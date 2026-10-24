@@ -134,13 +134,15 @@ Para probar el pipeline sin publicar nada: `gh workflow run release.yml`.
 ### Canal de actualizaciones
 La app no consulta GitHub directamente: lee el manifiesto en `https://letha.jurielc.com/updates/latest.json` (`MANIFEST_URL` en [`backend/letha/services/updates.py`](backend/letha/services/updates.py)). Cada release genera ese manifiesto (versión, cambios, y URL y huella SHA-256 de cada archivo) y el workflow [`site.yml`](.github/workflows/site.yml) lo publica en GitHub Pages, así que se puede cambiar de hosting sin afectar a las copias ya instaladas.
 
-Cada despliegue de Pages reemplaza el sitio entero, así que todo lo que se sirva en `letha.jurielc.com` (por ejemplo, la documentación en `/docs`) debe armarse en ese mismo workflow.
+Las descargas de **Configuración** (traducción y voces sin conexión) siguen el mismo principio: la app lee de dónde bajar cada archivo en `https://letha.jurielc.com/models/catalog.json` (`CATALOG_URL` en [`backend/letha/services/model_catalog.py`](backend/letha/services/model_catalog.py)). Las huellas SHA-256 están fijas en el código, así que el catálogo solo decide la dirección. Si el catálogo no responde, la app usa las direcciones de los releases `modelos-traduccion-1` y `voces-kokoro-1`. Para mover los modelos a otro hospedaje basta editar [`site/models/catalog.json`](site/models/catalog.json) y subirlo a `master`: el sitio se vuelve a publicar solo.
+
+Cada despliegue de Pages reemplaza el sitio entero, así que todo lo que se sirva en `letha.jurielc.com` (por ejemplo, la documentación en `/docs`) debe vivir en la carpeta [`site/`](site/) o armarse en ese mismo workflow.
 
 Configuración única:
 1. En el DNS, un registro `CNAME` de `letha` apuntando a `jurielc.github.io` (en Cloudflare, en modo «solo DNS»).
 2. En el repo, **Settings → Pages**: *Source* = **GitHub Actions**, *Custom domain* = `letha.jurielc.com` y, cuando esté disponible, **Enforce HTTPS**.
 
-Para probar contra otro manifiesto, arranca la app con `LETHA_UPDATE_URL=<url del manifiesto>`.
+Para probar contra otro manifiesto, arranca la app con `LETHA_UPDATE_URL=<url del manifiesto>`; para otro catálogo de modelos, con `LETHA_MODELS_URL=<url del catálogo>`.
 
 ---
 

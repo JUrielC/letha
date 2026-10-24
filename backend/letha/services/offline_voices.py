@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from letha import __version__, config
+from letha.services import model_catalog
 
+# Respaldo para cuando el catálogo de letha.jurielc.com no responde
 FILES_URL = "https://github.com/JUrielC/letha/releases/download/voces-kokoro-1"
 
 # Tamaño en bytes y huella SHA-256 de cada archivo publicado
@@ -117,9 +119,10 @@ def _download_files(progress: Dict[str, Any]) -> None:
     try:
         shutil.rmtree(unpacked, ignore_errors=True)
         unpacked.mkdir(parents=True)
+        urls = model_catalog.resolve("voices", {name: f"{FILES_URL}/{name}" for name in FILES})
         for name, expected in FILES.items():
             digest = hashlib.sha256()
-            request = urllib.request.Request(f"{FILES_URL}/{name}", headers={"User-Agent": f"letha/{__version__}"})
+            request = urllib.request.Request(urls[name], headers={"User-Agent": f"letha/{__version__}"})
             with urllib.request.urlopen(request, timeout=60) as response, open(unpacked / name, "wb") as f:
                 while chunk := response.read(1 << 20):
                     f.write(chunk)

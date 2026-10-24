@@ -12,6 +12,7 @@ import pytest
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="letha_pytest_"))
 os.environ["LETHA_DATA_DIR"] = str(_TEST_ROOT / "data")
 os.environ["LETHA_CACHE_DIR"] = str(_TEST_ROOT / "cache")
+os.environ["LETHA_MODELS_URL"] = (_TEST_ROOT / "sin-catalogo.json").as_uri()
 
 
 @pytest.fixture(autouse=True)

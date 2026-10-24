@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from letha import __version__, config
+from letha.services import model_catalog
 
+# Respaldo para cuando el catálogo de letha.jurielc.com no responde
 MODELS_URL = "https://github.com/JUrielC/letha/releases/download/modelos-traduccion-1"
 
 # Tamaño en bytes y huella SHA-256 del .zip publicado de cada modelo
@@ -101,7 +103,8 @@ def _download(model: str) -> None:
     try:
         directory.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256()
-        request = urllib.request.Request(f"{MODELS_URL}/{model}.zip", headers={"User-Agent": f"letha/{__version__}"})
+        url = model_catalog.resolve("translation", {model: f"{MODELS_URL}/{model}.zip"})[model]
+        request = urllib.request.Request(url, headers={"User-Agent": f"letha/{__version__}"})
         with urllib.request.urlopen(request, timeout=60) as response, open(archive, "wb") as f:
             while chunk := response.read(1 << 20):
                 f.write(chunk)
