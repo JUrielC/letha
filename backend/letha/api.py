@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Letha API", version="1.3.0", lifespan=lifespan)
+app = FastAPI(title="Letha API", version="1.4.0", lifespan=lifespan)
 
 # CORS restringido exclusivamente al entorno de desarrollo local (Next.js en puerto 3000)
 app.add_middleware(
