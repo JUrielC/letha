@@ -80,7 +80,74 @@ if (-not (Test-Path $Pythonw)) {
     throw "The installation finished but the Letha executable was not found in $ToolDir."
 }
 
-# 4. Crear accesos directos en el Menú Inicio y en el Escritorio
+# 4. Crear accesos directos en el Menú Inicio y en el Escritorio, con el icono de Letha
+$Icon = Join-Path $ToolDir "letha\Lib\site-packages\letha\assets\letha.ico"
+if (Test-Path $Icon) {
+    $IconLocation = "$Icon,0"
+} else {
+    $IconLocation = "$env:SystemRoot\System32\shell32.dll,21"
+}
+
+# Igual que WINDOWS_APP_ID en letha/app.py: así la barra de tareas une la ventana con este acceso directo
+$AppId = "app.letha.reader"
+if (-not ("LethaShortcut" -as [type])) {
+    try {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class LethaShortcut
+{
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore
+    {
+        void GetCount(out uint count);
+        void GetAt(uint index, out PropertyKey key);
+        void GetValue(ref PropertyKey key, out PropVariant value);
+        void SetValue(ref PropertyKey key, ref PropVariant value);
+        void Commit();
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private struct PropertyKey
+    {
+        public Guid FormatId;
+        public uint PropertyId;
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    private struct PropVariant
+    {
+        [FieldOffset(0)] public ushort Type;
+        [FieldOffset(8)] public IntPtr Value;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHGetPropertyStoreFromParsingName(string path, IntPtr bindContext, int flags, ref Guid iid, out IPropertyStore store);
+
+    public static void SetAppId(string path, string appId)
+    {
+        Guid iid = typeof(IPropertyStore).GUID;
+        IPropertyStore store;
+        SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 2, ref iid, out store);
+        PropertyKey key = new PropertyKey { FormatId = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), PropertyId = 5 };
+        PropVariant value = new PropVariant { Type = 31, Value = Marshal.StringToCoTaskMemUni(appId) };
+        try
+        {
+            store.SetValue(ref key, ref value);
+            store.Commit();
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(value.Value);
+            Marshal.ReleaseComObject(store);
+        }
+    }
+}
+"@
+    } catch {}
+}
+
 $WshShell = New-Object -ComObject WScript.Shell
 $StartMenuShortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "Letha.lnk"
 $DesktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Letha.lnk"
@@ -91,8 +158,9 @@ foreach ($ShortcutPath in @($StartMenuShortcut, $DesktopShortcut)) {
     $Shortcut.Arguments = "-m letha.app"
     $Shortcut.WorkingDirectory = $env:USERPROFILE
     $Shortcut.Description = "Letha - Synchronized PDF reader and audiobook"
-    $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,21"
+    $Shortcut.IconLocation = $IconLocation
     $Shortcut.Save()
+    try { [LethaShortcut]::SetAppId($ShortcutPath, $AppId) } catch {}
 }
 
 Write-Host ""

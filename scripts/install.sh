@@ -69,6 +69,14 @@ EOF
 fi
 chmod +x "$APP/Contents/MacOS/letha"
 
+ICON="$("$PYTHON" -c 'import letha.app as a; print(a.MAC_ICON if a.MAC_ICON.exists() else "")' 2>/dev/null || true)"
+ICON_KEY=""
+if [ -n "$ICON" ]; then
+  mkdir -p "$APP/Contents/Resources"
+  cp "$ICON" "$APP/Contents/Resources/letha.icns"
+  ICON_KEY="  <key>CFBundleIconFile</key><string>letha</string>"
+fi
+
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -81,12 +89,16 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
+$ICON_KEY
 $EXTRA_KEYS
 </dict>
 </plist>
 EOF
 
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# El Dock y Finder guardan el icono de la versión anterior hasta que se vuelve a registrar la app
+touch "$APP"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" >/dev/null 2>&1 || true
 
 say ""
 say "✓ Done. Letha is in your Applications folder: find it with Spotlight (⌘ + space, 'Letha')."

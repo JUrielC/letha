@@ -32,6 +32,10 @@ from letha.config import CACHE_DIR
 WEB_DIR = Path(__file__).resolve().parent / "web"
 NATIVE_WINDOW = Path(__file__).resolve().parent / "bin" / "letha-window"
 LOADING_PAGE = Path(__file__).resolve().parent / "loading.html"
+MAC_ICON = Path(__file__).resolve().parent / "assets" / "letha.icns"
+WINDOWS_ICON = Path(__file__).resolve().parent / "assets" / "letha.ico"
+# Debe coincidir con el identificador que scripts/install.ps1 pone en los accesos directos
+WINDOWS_APP_ID = "app.letha.reader"
 
 READY_PREFIX = "LETHA_APP_READY"
 STATE_FILE = CACHE_DIR / "instance.json"
@@ -334,6 +338,8 @@ def _run_in_native_window(server, sock: socket.socket, url: str, app_future: Fut
     if winforms.renderer != "edgechromium":
         return False
 
+    # Sin identificador propio, la barra de tareas agrupa la ventana con Python y muestra su icono
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
     global _window
     _window = webview.create_window(
         "Letha",
@@ -349,7 +355,9 @@ def _run_in_native_window(server, sock: socket.socket, url: str, app_future: Fut
     server_thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     server_thread.start()
     try:
-        webview.start(gui="edgechromium", private_mode=False, storage_path=str(CACHE_DIR / "webview"))
+        webview.start(
+            gui="edgechromium", private_mode=False, storage_path=str(CACHE_DIR / "webview"), icon=str(WINDOWS_ICON)
+        )
     except Exception:
         traceback.print_exc()
         _start_build(app_future, token)
