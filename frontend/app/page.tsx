@@ -120,32 +120,71 @@ export default function HomePage() {
     }
   };
 
+  const { bookId: playerBookId, chapter: playerChapter, chapterIdx: playerChapterIdx, activeSentenceIdx: playerSentenceIdx } = player;
+
+  useEffect(() => {
+    // Mientras cambia de página el reproductor aún tiene el capítulo anterior
+    if (!playerBookId || !playerChapter || playerChapter.idx !== playerChapterIdx || playerSentenceIdx < 0) return;
+    const chapterIdx = playerChapter.idx;
+    setBooks((prev) =>
+      prev.some(
+        (b) =>
+          b.id === playerBookId &&
+          (b.current_chapter_idx !== chapterIdx || b.current_sentence_idx !== playerSentenceIdx)
+      )
+        ? prev.map((b) =>
+            b.id === playerBookId
+              ? {
+                  ...b,
+                  current_chapter_idx: chapterIdx,
+                  current_sentence_idx: playerSentenceIdx,
+                  last_read_at: Math.floor(Date.now() / 1000),
+                }
+              : b
+          )
+        : prev
+    );
+  }, [playerBookId, playerChapter, playerChapterIdx, playerSentenceIdx]);
+
+  useEffect(() => {
+    if (playerBookId) setLastBookId(playerBookId);
+  }, [playerBookId]);
+
   const handleVoiceChange = (bookId: string, newVoice: string) => {
     setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, voice: newVoice } : b)));
   };
 
+  // La cuadrícula conserva su orden mientras suena un libro; lo reciente se decide como lo ordena el backend
+  const recentBooks = useMemo(() => [...books].sort((a, b) => b.last_read_at - a.last_read_at), [books]);
+
   const continueBook = useMemo(() => {
-    if (books.length === 0) return null;
+    if (recentBooks.length === 0) return null;
     // 1. Libro con progreso de cap?tulos
-    const withChapter = books.find((b) => b.current_chapter_idx >= 1);
+    const withChapter = recentBooks.find((b) => b.current_chapter_idx >= 1);
     if (withChapter) return withChapter;
     // 2. Libro iniciado
-    const started = books.find(isStarted);
+    const started = recentBooks.find(isStarted);
     if (started) return started;
     // 3. Último libro abierto
-    const lastOpened = lastBookId ? books.find((b) => b.id === lastBookId) : undefined;
+    const lastOpened = lastBookId ? recentBooks.find((b) => b.id === lastBookId) : undefined;
     if (lastOpened) return lastOpened;
     // 4. Libro le?do recientemente seg?n el backend
-    const recent = books.find((b) => b.last_read_at && b.last_read_at > b.created_at);
+    const recent = recentBooks.find((b) => b.last_read_at && b.last_read_at > b.created_at);
     if (recent) return recent;
     return null;
-  }, [books, lastBookId]);
+  }, [recentBooks, lastBookId]);
+
+  const continueChapter =
+    continueBook && playerBookId === continueBook.id && playerChapter?.idx === continueBook.current_chapter_idx
+      ? playerChapter
+      : null;
 
   useEffect(() => {
     if (!continueBook) {
       setContinueSentenceText(null);
       return;
     }
+    if (continueChapter) return;
     let ignore = false;
     api
       .getChapter(
@@ -162,17 +201,20 @@ export default function HomePage() {
     return () => {
       ignore = true;
     };
-  }, [continueBook]);
+  }, [continueBook, continueChapter]);
 
+  const leftOffText = continueChapter
+    ? continueChapter.sentences[continueBook!.current_sentence_idx]?.text || null
+    : continueSentenceText;
   const continueInfo = continueBook ? pageInfo(continueBook) : null;
   const playingContinue = !!continueBook && player.bookId === continueBook.id && player.isPlaying;
   const continuePalette = continueBook ? pickCoverPalette(continueBook.id) : null;
   const continuePersona = personaName(continueBook?.voice, voices, t);
 
   const otherInProgress = useMemo(() => {
-    if (!continueBook) return books.filter(isStarted).slice(0, 2);
-    return books.filter((b) => b.id !== continueBook.id && isStarted(b)).slice(0, 2);
-  }, [books, continueBook]);
+    if (!continueBook) return recentBooks.filter(isStarted).slice(0, 2);
+    return recentBooks.filter((b) => b.id !== continueBook.id && isStarted(b)).slice(0, 2);
+  }, [recentBooks, continueBook]);
 
   const totalPages = useMemo(
     () => books.reduce((acc, b) => acc + (b.total_pages || 0), 0),
@@ -357,7 +399,7 @@ export default function HomePage() {
                 </p>
               </div>
 
-              {continueSentenceText && (
+              {leftOffText && (
                 <figure className="m-0">
                   <figcaption className="text-[13px]" style={{ color: "var(--muted)" }}>
                     {t.library.leftOff}
@@ -372,7 +414,7 @@ export default function HomePage() {
                         boxDecorationBreak: "clone",
                       }}
                     >
-                      {continueSentenceText}
+                      {leftOffText}
                     </span>
                   </blockquote>
                 </figure>
