@@ -82,7 +82,8 @@ export function BookCard({
 
   const handleSelectVoice = async (newVoice: string) => {
     setSelectedVoice(newVoice);
-    await api.updateSettings(book.id, newVoice, book.speed).catch(console.error);
+    if (player.bookId === book.id && player.voice) player.changeVoice(newVoice);
+    else await api.updateSettings(book.id, newVoice, book.speed).catch(console.error);
     if (onVoiceChange) onVoiceChange(book.id, newVoice);
   };
 
