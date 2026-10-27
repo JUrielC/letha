@@ -40,6 +40,7 @@ interface PlayerValue {
   close: () => void;
   setReaderVisible: (visible: boolean) => void;
   refreshSettings: () => void;
+  refreshVoices: () => void;
   togglePlay: () => void;
   seekRelative: (seconds: number) => void;
   seekTo: (time: number) => void;
@@ -101,6 +102,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [autoAdvanceSentence, setAutoAdvanceSentence] = useState(true);
   const [autoAdvancePage, setAutoAdvancePage] = useState(true);
   const [boundaryType, setBoundaryType] = useState<Boundary>("SentenceBoundary");
+  const [retryKey, setRetryKey] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bookIdRef = useRef<string | null>(null);
@@ -113,6 +115,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const isPlayingRef = useRef(false);
   const isInitialLoadRef = useRef(true);
   const singleSentenceEndRef = useRef<number | null>(null);
+  const audioFailedRef = useRef(false);
   const offlineModeSeenRef = useRef(offlineMode);
 
   // Fuera del lector el libro se escucha como audiolibro: de corrido y pasando de página
@@ -157,6 +160,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     resumePlayAfterSwapRef.current = false;
     singleSentenceEndRef.current = null;
     pendingSeekTimeRef.current = null;
+    audioFailedRef.current = false;
     setAudioUrl(null);
     setChapter(null);
     setChapterIdx(null);
@@ -233,6 +237,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const currentChapter = chapterIdx;
     const currentVoice = voice;
     setVoiceUnavailable(false);
+    audioFailedRef.current = false;
 
     audioRef.current?.pause();
     if (!autoPlayNextChapterRef.current) {
@@ -255,10 +260,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
       savePreferences({ last_book_id: currentBookId });
-      api.updateProgress(currentBookId, currentChapter, Math.max(0, restoredSentence)).catch(console.error);
-    } else {
-      api.updateProgress(currentBookId, currentChapter, 0).catch(console.error);
     }
+    api.updateProgress(currentBookId, currentChapter, Math.max(0, restoredSentence)).catch(console.error);
 
     const seekToRestored = (start: number | null | undefined) => {
       if (!restoreWaitingRef.current || typeof start !== "number") return;
@@ -360,6 +363,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err: any) {
         if (ignore || err?.name === "AbortError") return;
+        audioFailedRef.current = true;
         if (err instanceof ApiError && err.code === "offline_voices_missing") setVoiceUnavailable(true);
         autoPlayNextChapterRef.current = false;
         playWhenReadyRef.current = false;
@@ -377,7 +381,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       ignore = true;
       controller.abort();
     };
-  }, [bookId, chapterIdx, voice]);
+  }, [bookId, chapterIdx, voice, retryKey]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -447,6 +451,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setCurrentTime(startSec);
       startPlaying();
     }
+  };
+
+  // Las voces sin conexión pueden haberse descargado o la conexión haber vuelto desde que falló la página
+  const refreshVoices = () => {
+    api.getVoices().then(setVoices).catch(console.error);
+    if (!audioFailedRef.current) return;
+    if (chapterIdx !== null && activeSentenceIdx >= 0) {
+      pendingRestoreRef.current = { chapterIdx, sentenceIdx: activeSentenceIdx };
+    }
+    setRetryKey((k) => k + 1);
   };
 
   const togglePlay = () => {
@@ -537,6 +551,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     close,
     setReaderVisible,
     refreshSettings,
+    refreshVoices,
     togglePlay,
     seekRelative,
     seekTo,

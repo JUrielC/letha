@@ -102,6 +102,7 @@ function ReaderContent() {
     player.openBook(bookId);
     player.setReaderVisible(true);
     player.refreshSettings();
+    player.refreshVoices();
     return () => player.setReaderVisible(false);
   }, [bookId]);
 

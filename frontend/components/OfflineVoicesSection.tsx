@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Check, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { api, OfflineVoices } from "@/lib/api";
+import { usePlayer } from "@/components/Player";
 import { useI18n } from "@/lib/i18n";
 
 const VOICE_LANGUAGES = ["es", "en", "fr", "it", "pt"];
@@ -11,6 +12,7 @@ export function OfflineVoicesSection() {
   const { t, locale } = useI18n();
   const [voices, setVoices] = useState<OfflineVoices | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const { refreshVoices } = usePlayer();
 
   const refresh = useCallback(() => {
     api
@@ -32,6 +34,10 @@ export function OfflineVoicesSection() {
     const timer = setInterval(refresh, 1000);
     return () => clearInterval(timer);
   }, [downloading, refresh]);
+
+  useEffect(() => {
+    if (voices && !downloading) refreshVoices();
+  }, [voices?.status]);
 
   const run = (action: Promise<unknown>) => action.then(refresh, refresh);
 
