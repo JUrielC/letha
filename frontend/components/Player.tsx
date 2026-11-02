@@ -103,6 +103,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [autoAdvancePage, setAutoAdvancePage] = useState(true);
   const [boundaryType, setBoundaryType] = useState<Boundary>("SentenceBoundary");
   const [retryKey, setRetryKey] = useState(0);
+  const [audioSettings, setAudioSettings] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bookIdRef = useRef<string | null>(null);
@@ -117,6 +118,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const singleSentenceEndRef = useRef<number | null>(null);
   const audioFailedRef = useRef(false);
   const offlineModeSeenRef = useRef(offlineMode);
+  const audioSettingsSeenRef = useRef<string | null>(null);
 
   // Fuera del lector el libro se escucha como audiolibro: de corrido y pasando de página
   const continuousSentence = autoAdvanceSentence || !readerVisible;
@@ -133,6 +135,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         setAutoAdvanceSentence(s.auto_advance_sentence ?? true);
         setAutoAdvancePage(s.auto_advance_page ?? true);
         setBoundaryType(s.boundary_type === "WordBoundary" ? "WordBoundary" : "SentenceBoundary");
+        setAudioSettings(`${s.edge_base_speed}|${s.boundary_type}`);
       })
       .catch(console.error);
   }, []);
@@ -453,14 +456,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Las voces sin conexión pueden haberse descargado o la conexión haber vuelto desde que falló la página
-  const refreshVoices = () => {
-    api.getVoices().then(setVoices).catch(console.error);
-    if (!audioFailedRef.current) return;
+  const reloadChapter = () => {
     if (chapterIdx !== null && activeSentenceIdx >= 0) {
       pendingRestoreRef.current = { chapterIdx, sentenceIdx: activeSentenceIdx };
     }
     setRetryKey((k) => k + 1);
+  };
+
+  // Las voces sin conexión pueden haberse descargado o la conexión haber vuelto desde que falló la página
+  const refreshVoices = () => {
+    api.getVoices().then(setVoices).catch(console.error);
+    if (audioFailedRef.current) reloadChapter();
   };
 
   const togglePlay = () => {
@@ -504,7 +510,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setChapterIdx(idx);
   };
 
-  const applyVoice = (newVoice: string) => {
+  const discardAudio = () => {
     stopPlaying();
     setAudioUrl(null);
     setChapter((prev) =>
@@ -512,8 +518,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         ? { ...prev, has_audio: false, sentences: prev.sentences.map((s) => ({ ...s, start: null, end: null })) }
         : null
     );
+  };
+
+  const applyVoice = (newVoice: string) => {
+    discardAudio();
     setVoice(newVoice);
   };
+
+  // La velocidad base y el tipo de marcas forman parte del nombre del audio guardado: al cambiarlos, el que suena deja de existir
+  useEffect(() => {
+    if (audioSettings === null) return;
+    const previous = audioSettingsSeenRef.current;
+    audioSettingsSeenRef.current = audioSettings;
+    if (previous === null || previous === audioSettings || !bookId || chapterIdx === null) return;
+    if (isPlayingRef.current) playWhenReadyRef.current = true;
+    discardAudio();
+    reloadChapter();
+  }, [audioSettings]);
 
   const changeVoice = (newVoice: string) => {
     if (newVoice === voice || !bookId) return;

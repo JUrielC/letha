@@ -246,6 +246,7 @@ function SettingsContent() {
           auto_advance_page: nextAutoAdvancePage,
           boundary_type: nextBoundary,
         });
+        player.refreshSettings();
         setSavedNotice(true);
         setTimeout(() => setSavedNotice(false), 2000);
       } catch (err: any) {
