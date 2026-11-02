@@ -3,6 +3,7 @@ import { Instrument_Sans, Literata } from "next/font/google";
 import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 import { KeepAlive } from "@/components/KeepAlive";
+import { LinkGuard } from "@/components/LinkGuard";
 import { NativeLanguageGate } from "@/components/NativeLanguageGate";
 import { MiniPlayer } from "@/components/MiniPlayer";
 import { OfflineModeProvider } from "@/components/OfflineMode";
@@ -74,6 +75,7 @@ export default function RootLayout({
           <OfflineModeProvider>
             <PlayerProvider>
               <KeepAlive />
+              <LinkGuard />
               {children}
               <MiniPlayer />
               <NativeLanguageGate />

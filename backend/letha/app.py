@@ -340,6 +340,8 @@ def _run_in_native_window(server, sock: socket.socket, url: str, app_future: Fut
 
     # Sin identificador propio, la barra de tareas agrupa la ventana con Python y muestra su icono
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    # La interfaz no tiene enlaces externos: un "abrir en ventana nueva" se queda en Letha en vez de ir al navegador
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     global _window
     _window = webview.create_window(
         "Letha",
